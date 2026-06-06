@@ -1,72 +1,100 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "Rapid.js",
+  "theme": "luma",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
-  },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "primary": "#6366f1",
+    "light": "#818cf8",
+    "dark": "#4f46e5"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/Nightre/Rapid.js"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/Nightre/Rapid.js"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guide",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "guide/introduction",
+              "guide/installation",
+              "guide/quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "guide/renderer",
+              "guide/textures",
+              "guide/transforms"
+            ]
+          },
+          {
+            "group": "Drawing",
+            "pages": [
+              "guide/sprites",
+              "guide/graphics",
+              "guide/text"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "guide/render-textures",
+              "guide/shaders",
+              "guide/particles",
+              "guide/blend-modes",
+              "guide/masking"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Renderer",
+            "pages": [
+              "api/rapid",
+              "api/matrix-stack"
+            ]
+          },
+          {
+            "group": "Textures",
+            "pages": [
+              "api/texture-manager",
+              "api/texture",
+              "api/render-texture",
+              "api/text-texture"
+            ]
+          },
+          {
+            "group": "Shaders & Primitives",
+            "pages": [
+              "api/gl-shader",
+              "api/custom-gl-shader",
+              "api/color",
+              "api/vec2"
+            ]
+          },
+          {
+            "group": "Particles",
+            "pages": [
+              "api/particle-emitter"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

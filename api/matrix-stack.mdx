@@ -1,0 +1,572 @@
+---
+title: "MatrixStack and MatrixStore — Transform API"
+sidebarTitle: "MatrixStack"
+description: "API reference for MatrixStack (hierarchical save/restore transforms) and MatrixStore (flat 2D matrix buffer). Covers translate, rotate, scale, and world/local conversion."
+---
+
+`MatrixStack` is a high-performance hierarchical transform manager modelled after the Canvas 2D context's `save()` / `restore()` API. It maintains both a *local* matrix (transforms applied at the current level) and a *world* matrix (the accumulated transform from all parent levels). `MatrixStore` is the underlying flat buffer that stores every 2D 3×3 matrix as a compact 6-element array `[a, b, c, d, tx, ty]` packed into a single `Float32Array`, maximising memory locality and minimising GC pressure.
+
+Access `MatrixStack` via `rapid.matrixStack` and `MatrixStore` via `rapid.matrix`.
+
+---
+
+## MatrixStack
+
+`MatrixStack` is accessed through `rapid.matrixStack`. It uses `MatrixStore` internally and exposes a save/restore interface familiar from Canvas 2D.
+
+<Note>
+`rapid.clear()` calls `matrixStack.reset()` at the start of every frame. You should not need to call `reset()` directly in normal usage.
+</Note>
+
+### `save()`
+
+```typescript
+save(): { world: number; local: number; step: number }
+```
+
+Pushes the current world matrix onto the stack and allocates a new local/world matrix pair for the next level in the hierarchy. Equivalent to `CanvasRenderingContext2D.save()`.
+
+<ResponseField name="return.world" type="number">
+  Index of the newly allocated world matrix in `MatrixStore`.
+</ResponseField>
+<ResponseField name="return.local" type="number">
+  Index of the newly allocated local matrix in `MatrixStore`.
+</ResponseField>
+<ResponseField name="return.step" type="number">
+  The current step counter, usable with `updateMatrix()`.
+</ResponseField>
+
+```typescript
+rapid.matrixStack.save();
+rapid.matrixStack.translate(100, 100);
+rapid.drawSprite({ texture: childTex });
+rapid.matrixStack.restore();
+```
+
+### `restore()`
+
+```typescript
+restore(): void
+```
+
+Pops the most recently saved matrix state, reverting `curWorldM` and `curLocalM` to their pre-`save()` values. Equivalent to `CanvasRenderingContext2D.restore()`. Silently no-ops if the stack is empty.
+
+### `translate(x, y)`
+
+```typescript
+translate(x: number, y: number): void
+```
+
+Applies a translation to both the local and world matrices.
+
+<ParamField path="x" type="number" required>Translation along the X axis in logical pixels.</ParamField>
+<ParamField path="y" type="number" required>Translation along the Y axis in logical pixels.</ParamField>
+
+```typescript
+rapid.matrixStack.save();
+rapid.matrixStack.translate(250, 150);
+rapid.drawRect({ width: 100, height: 60, color: Color.Red });
+rapid.matrixStack.restore();
+```
+
+### `scale(scaleX, scaleY?)`
+
+```typescript
+scale(scaleX: number, scaleY?: number): void
+```
+
+Applies a scale to both the local and world matrices.
+
+<ParamField path="scaleX" type="number" required>Scale factor along the X axis.</ParamField>
+<ParamField path="scaleY" type="number">Scale factor along the Y axis. Defaults to `scaleX` for uniform scaling.</ParamField>
+
+```typescript
+rapid.matrixStack.save();
+rapid.matrixStack.scale(2);           // uniform 2×
+rapid.matrixStack.scale(1.5, 0.5);   // non-uniform
+rapid.matrixStack.restore();
+```
+
+### `rotate(radians)`
+
+```typescript
+rotate(radians: number): void
+```
+
+Applies a rotation (in radians, clockwise in screen space) to both the local and world matrices.
+
+<ParamField path="radians" type="number" required>Rotation angle in radians.</ParamField>
+
+```typescript
+rapid.matrixStack.save();
+rapid.matrixStack.rotate(Math.PI / 4); // 45°
+rapid.drawSprite({ texture: arrowTex });
+rapid.matrixStack.restore();
+```
+
+### `rotateWithOffset(radians, offsetX, offsetY)`
+
+```typescript
+rotateWithOffset(radians: number, offsetX: number, offsetY: number): void
+```
+
+Rotates around a pivot point offset from the current origin, without requiring manual translate → rotate → translate-back calls. Internally performs: translate by `(offsetX, offsetY)`, rotate by `radians`, translate by `(-offsetX, -offsetY)`.
+
+<ParamField path="radians" type="number" required>Rotation angle in radians.</ParamField>
+<ParamField path="offsetX" type="number" required>X component of the pivot in local space.</ParamField>
+<ParamField path="offsetY" type="number" required>Y component of the pivot in local space.</ParamField>
+
+```typescript
+// Rotate a 64×64 sprite around its centre
+rapid.matrixStack.save();
+rapid.matrixStack.rotateWithOffset(angle, 32, 32);
+rapid.drawSprite({ texture: spriteTex });
+rapid.matrixStack.restore();
+```
+
+### `identity()`
+
+```typescript
+identity(): void
+```
+
+Resets both the local and world matrices to the identity matrix, removing any accumulated transforms at the current stack level without disturbing the stack itself.
+
+```typescript
+rapid.matrixStack.save();
+rapid.matrixStack.translate(500, 500);
+rapid.matrixStack.identity(); // undo the translate
+rapid.drawSprite({ texture: tex }); // drawn at (0, 0)
+rapid.matrixStack.restore();
+```
+
+### `reset()`
+
+```typescript
+reset(): void
+```
+
+Clears the entire stack — matrices, step counters, and action records — and re-initialises the root local/world matrix pair to identity. Called automatically by `rapid.clear()` every frame.
+
+### `applyTransform(transform, width?, height?)`
+
+```typescript
+applyTransform(transform: ITransformOptions, width?: number, height?: number): void
+```
+
+Applies a complete `ITransformOptions` object to the stack. If `transform.saveTransform` is `true` (the default), `save()` is called first. Handles `x`/`y`, `position`, `rotation`, `scale`, `offsetX`/`offsetY`, `offset`, and `origin` in the correct order.
+
+<ParamField path="transform" type="ITransformOptions" required>
+  The transform descriptor. See [ITransformOptions](#itransformoptions-interface) for all fields.
+</ParamField>
+<ParamField path="width" type="number">
+  Logical width used to resolve `origin` anchor percentages. Default `0`.
+</ParamField>
+<ParamField path="height" type="number">
+  Logical height used to resolve `origin` anchor percentages. Default `0`.
+</ParamField>
+
+```typescript
+rapid.matrixStack.applyTransform(
+  { x: 200, y: 100, rotation: Math.PI / 6, origin: 0.5 },
+  texture.width,
+  texture.height,
+);
+rapid.drawSprite({ texture, saveTransform: false });
+rapid.matrixStack.restore();
+```
+
+### `updateMatrix(step)`
+
+```typescript
+updateMatrix(step: number | { step: number }): void
+```
+
+Recalculates all world matrices from the given step downward in the recorded hierarchy. Use this in *retained/deferred* scene graph scenarios where you mutate a node's local matrix after the initial traversal and need to propagate the change to descendants without re-running the full traversal.
+
+<ParamField path="step" type="number | { step: number }" required>
+  The step index returned by `save()`, or an object with a `step` property.
+</ParamField>
+
+```typescript
+const nodeState = rapid.matrixStack.save();
+rapid.matrixStack.translate(nodeX, nodeY);
+// ... build children
+
+// Later, update the node position without full re-traversal:
+rapid.matrixStack.translate(newX - nodeX, newY - nodeY);
+rapid.matrixStack.updateMatrix(nodeState);
+```
+
+### `localToWorld(x, y)`
+
+```typescript
+localToWorld(x: number, y: number): { x: number; y: number }
+```
+
+Transforms a point from the current local space to world (screen) space using the current world matrix.
+
+<ResponseField name="return" type="{ x: number; y: number }">World-space coordinates.</ResponseField>
+
+```typescript
+const worldPos = rapid.matrixStack.localToWorld(0, 0);
+console.log("Object is at world position:", worldPos);
+```
+
+### `worldToLocal(x, y)`
+
+```typescript
+worldToLocal(x: number, y: number): { x: number; y: number }
+```
+
+Transforms a point from world (screen) space to the current local space using the inverse of the current world matrix. Useful for hit-testing pointer input against transformed objects.
+
+<ResponseField name="return" type="{ x: number; y: number }">Local-space coordinates.</ResponseField>
+
+```typescript
+const localMouse = rapid.matrixStack.worldToLocal(mouseX, mouseY);
+if (localMouse.x >= 0 && localMouse.x <= sprite.width &&
+    localMouse.y >= 0 && localMouse.y <= sprite.height) {
+  // pointer is inside the sprite
+}
+```
+
+### `getGlobalPosition()`
+
+```typescript
+getGlobalPosition(): { x: number; y: number }
+```
+
+Returns the world-space translation `(tx, ty)` extracted directly from the current world matrix — the position the origin would appear at on screen.
+
+<ResponseField name="return" type="{ x: number; y: number }">World-space position.</ResponseField>
+
+### `getGlobalScale()`
+
+```typescript
+getGlobalScale(): { x: number; y: number }
+```
+
+Extracts the accumulated scale from the current world matrix by computing the length of each basis vector.
+
+<ResponseField name="return" type="{ x: number; y: number }">World-space scale factors.</ResponseField>
+
+### `getGlobalRotation()`
+
+```typescript
+getGlobalRotation(): number
+```
+
+Extracts the accumulated rotation (in radians) from the current world matrix using `Math.atan2`.
+
+<ResponseField name="return" type="number">World-space rotation in radians.</ResponseField>
+
+### `getTransform()`
+
+```typescript
+getTransform(): Float32Array
+```
+
+Returns a *copy* of the current world matrix as a 6-element `Float32Array` `[a, b, c, d, tx, ty]`.
+
+<ResponseField name="return" type="Float32Array">6-element 2D transform array.</ResponseField>
+
+### `setTransform(f)`
+
+```typescript
+setTransform(f: Float32Array): void
+```
+
+Directly overwrites the current world matrix with the provided 6-element array. Use this to restore a previously captured transform or to apply an externally computed matrix.
+
+<ParamField path="f" type="Float32Array" required>A 6-element `[a, b, c, d, tx, ty]` transform array.</ParamField>
+
+```typescript
+const saved = rapid.matrixStack.getTransform();
+// ... other transforms ...
+rapid.matrixStack.setTransform(saved); // restore
+```
+
+### `toCSSMatrix()`
+
+```typescript
+toCSSMatrix(): string
+```
+
+Returns a CSS `matrix()` string representing the current world matrix, suitable for use in `element.style.transform`.
+
+<ResponseField name="return" type="string">CSS `matrix(a, b, c, d, tx, ty)` string.</ResponseField>
+
+```typescript
+uiElement.style.transform = rapid.matrixStack.toCSSMatrix();
+```
+
+---
+
+## MatrixStore
+
+`MatrixStore` is accessed via `rapid.matrix`. It is a low-level flat-array container — each matrix is stored as 6 consecutive `Float32Array` elements `[a, b, c, d, tx, ty]` representing the upper 2×3 portion of a homogeneous 3×3 matrix. Matrices are referenced by an integer *index* returned at allocation time.
+
+<Note>
+Most users interact with `MatrixStack` rather than `MatrixStore` directly. Use `MatrixStore` when you need to maintain transform trees outside the main frame traversal, or when building custom scene-graph tooling.
+</Note>
+
+### `alloc()`
+
+```typescript
+alloc(): number
+```
+
+Allocates a new matrix, initialises it to identity, and returns its index.
+
+<ResponseField name="return" type="number">Index of the new identity matrix.</ResponseField>
+
+### `allocDirty()`
+
+```typescript
+allocDirty(): number
+```
+
+Allocates a new matrix slot **without** initialising its elements. Faster than `alloc()` when you intend to overwrite all six values immediately (e.g. via `copy`).
+
+<ResponseField name="return" type="number">Index of the new uninitialized matrix.</ResponseField>
+
+### `identity(index)`
+
+```typescript
+identity(index: number): void
+```
+
+Sets the matrix at `index` to the 2D identity transform `[1, 0, 0, 1, 0, 0]`.
+
+### `reset()`
+
+```typescript
+reset(): void
+```
+
+Deallocates all matrices, resetting the store to zero-count. Called by `MatrixStack.reset()` every frame.
+
+### `translate(index, x, y)`
+
+```typescript
+translate(index: number, x: number, y: number): void
+```
+
+Post-multiplies a translation by `(x, y)` into the matrix at `index`.
+
+### `scale(index, sx, sy)`
+
+```typescript
+scale(index: number, scaleX: number, scaleY: number): void
+```
+
+Post-multiplies a scale by `(sx, sy)` into the matrix at `index`.
+
+### `rotate(index, radians)`
+
+```typescript
+rotate(index: number, radians: number): void
+```
+
+Post-multiplies a rotation by `radians` into the matrix at `index`.
+
+### `rotateWithOffset(index, radians, offsetX, offsetY)`
+
+```typescript
+rotateWithOffset(index: number, radians: number, offsetX: number, offsetY: number): void
+```
+
+Rotates the matrix at `index` around a local pivot `(offsetX, offsetY)` — equivalent to `translate → rotate → translate-back`.
+
+```typescript
+// Rotate a 128×128 sprite around its centre
+rapid.matrix.rotateWithOffset(matIdx, angle, 64, 64);
+```
+
+### `copy(dst, src)`
+
+```typescript
+copy(dst: number, src: number): void
+```
+
+Copies all six elements from the matrix at `src` into the matrix at `dst`.
+
+### `multiply(dst, src)`
+
+```typescript
+multiply(dst: number, src: number): void
+```
+
+Multiplies the matrix at `dst` by the matrix at `src`, storing the result back in `dst`. Equivalent to `multiplyOut(dst, dst, src)`.
+
+### `multiplyOut(out, a, b)`
+
+```typescript
+multiplyOut(out: number, a: number, b: number): void
+```
+
+Multiplies matrix `a` by matrix `b` and stores the result in `out`. `out` may safely alias `a` or `b`.
+
+### `invert(index)`
+
+```typescript
+invert(index: number): void
+```
+
+Inverts the matrix at `index` in-place. If the matrix is singular (non-invertible), falls back to identity.
+
+```typescript
+const camIdx = rapid.matrix.alloc();
+rapid.matrix.copy(camIdx, rapid.matrixStack.curWorldM);
+rapid.matrix.invert(camIdx); // now camIdx is the inverse camera transform
+```
+
+### `transformPoint(index, x, y)`
+
+```typescript
+transformPoint(index: number, x: number, y: number): { x: number; y: number }
+```
+
+Transforms the point `(x, y)` by the matrix at `index` and returns the result.
+
+<ResponseField name="return" type="{ x: number; y: number }">Transformed point.</ResponseField>
+
+### `worldToLocal(index, x, y)`
+
+```typescript
+worldToLocal(index: number, x: number, y: number): { x: number; y: number }
+```
+
+Inverts the matrix at `index` (into a temporary slot) and transforms `(x, y)` through it, converting a world-space point to the local space of `index`. The temporary matrix is immediately freed.
+
+<ResponseField name="return" type="{ x: number; y: number }">Point in local space.</ResponseField>
+
+### `localToWorld(index, x, y)`
+
+```typescript
+localToWorld(index: number, x: number, y: number): { x: number; y: number }
+```
+
+Transforms `(x, y)` from the local space of `index` to world space — equivalent to `transformPoint`.
+
+<ResponseField name="return" type="{ x: number; y: number }">Point in world space.</ResponseField>
+
+### `getPosition(index)`
+
+```typescript
+getPosition(index: number): { x: number; y: number }
+```
+
+Extracts the translation `(tx, ty)` from the matrix at `index`.
+
+<ResponseField name="return" type="{ x: number; y: number }">Translation component.</ResponseField>
+
+### `getScale(index)`
+
+```typescript
+getScale(index: number): { x: number; y: number }
+```
+
+Computes the scale by measuring the length of the two basis vectors of the matrix at `index`.
+
+<ResponseField name="return" type="{ x: number; y: number }">Scale factors `{ x, y }`.</ResponseField>
+
+### `getRotation(index)`
+
+```typescript
+getRotation(index: number): number
+```
+
+Extracts the rotation in radians from the matrix at `index` using `Math.atan2(b, a)`.
+
+<ResponseField name="return" type="number">Rotation in radians.</ResponseField>
+
+### `toCSSMatrix(index)`
+
+```typescript
+toCSSMatrix(index: number): string
+```
+
+Returns a CSS `matrix()` string for the matrix at `index`.
+
+<ResponseField name="return" type="string">CSS `matrix(a, b, c, d, tx, ty)` string.</ResponseField>
+
+```typescript
+const idx = rapid.matrix.alloc();
+rapid.matrix.translate(idx, 100, 200);
+rapid.matrix.rotate(idx, 0.5);
+console.log(rapid.matrix.toCSSMatrix(idx));
+// → "matrix(0.877, 0.479, -0.479, 0.877, 100, 200)"
+```
+
+---
+
+## ITransformOptions Interface
+
+`ITransformOptions` is accepted by every draw method and by `MatrixStack.applyTransform()`. Properties are applied in this order: `x`/`y` → `position` → `rotation` → `scale` → `offsetX`/`offsetY`/`offset` → `origin`.
+
+<ParamField path="saveTransform" type="boolean">
+  When `true` (default), `save()` is called before applying any transforms and the caller is responsible for calling `restore()` (or using `withTransform`). Set to `false` to mutate the current matrix in-place without pushing a new stack frame.
+</ParamField>
+
+<ParamField path="afterSave" type="() => void">
+  Optional callback executed immediately after the `save()` call (if any), before transforms are applied. Useful for inserting additional state setup.
+</ParamField>
+
+<ParamField path="x" type="number">
+  Translation along the X axis in logical pixels.
+</ParamField>
+
+<ParamField path="y" type="number">
+  Translation along the Y axis in logical pixels.
+</ParamField>
+
+<ParamField path="position" type="Vec2">
+  Translation as a `Vec2`. Applied after `x`/`y`. Both may be used simultaneously — they are additive.
+</ParamField>
+
+<ParamField path="rotation" type="number">
+  Rotation in radians, applied after position.
+</ParamField>
+
+<ParamField path="scale" type="number | Vec2">
+  Uniform scale when a `number`; per-axis scale when a `Vec2`. Applied after rotation.
+</ParamField>
+
+<ParamField path="offsetX" type="number">
+  Additional X translation applied after scale, in the already-scaled local space. Useful for moving the draw origin without affecting rotation pivot.
+</ParamField>
+
+<ParamField path="offsetY" type="number">
+  Additional Y translation applied after scale.
+</ParamField>
+
+<ParamField path="offset" type="Vec2">
+  Additional translation as a `Vec2`, summed with `offsetX`/`offsetY`.
+</ParamField>
+
+<ParamField path="origin" type="number | Vec2">
+  Normalised pivot point in `0–1` range relative to the sprite's `width` / `height`. `0.5` centres the pivot. A `Vec2` sets X and Y independently. The calculated pixel offset is *subtracted* from `offsetX`/`offsetY`.
+
+  For example, `origin: 0.5` on a 64×64 sprite shifts the draw origin by `(-32, -32)`, so the sprite rotates around its centre.
+</ParamField>
+
+**Example — all options together**
+
+```typescript
+rapid.drawSprite({
+  texture: shipTexture,
+  x: 400,
+  y: 300,
+  rotation: heading,
+  scale: new Vec2(2, 2),
+  origin: 0.5,           // pivot at sprite centre
+  offsetX: 0,
+  offsetY: -engineOffsetY, // thruster flame offset
+});
+```
+
+<Tip>
+When you pass `ITransformOptions` fields directly to a draw method (e.g. `drawSprite`), Rapid skips the save/restore overhead entirely if none of the transform fields are present, making no-op paths essentially free.
+</Tip>

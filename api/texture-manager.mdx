@@ -1,0 +1,188 @@
+---
+title: "TextureManager — Loading and Caching Textures"
+sidebarTitle: "TextureManager"
+description: "API reference for TextureManager: async load, sync create, RenderTexture creation, TextTexture creation, and reference-counted destruction."
+---
+
+`TextureManager` is the central hub for all texture operations in Rapid.js. It is accessed through `rapid.texture` and takes care of loading images from the network, creating textures from in-memory sources, and tracking every GPU resource through reference counting so nothing leaks and nothing is destroyed too early.
+
+<Note>
+  URLs loaded via `.load()` are cached by URL string. Calling `.load()` again
+  with the same URL skips the network request and returns a new `Texture` view
+  that shares the same underlying `BaseTexture` — no duplicate GPU uploads.
+</Note>
+
+---
+
+## Methods
+
+### `load(url, options?)`
+
+Asynchronously fetches an image from a URL, uploads it to the GPU, caches the result, and returns a `Texture` wrapping the full image.
+
+```typescript
+const tex = await rapid.texture.load("/assets/hero.png");
+```
+
+**Parameters**
+
+<ParamField path="url" type="string" required>
+  The URL of the image to load. Used as the cache key.
+</ParamField>
+
+<ParamField path="options" type="ITextureOptions">
+  Optional texture configuration. See [ITextureOptions](#itextureoptions) below.
+</ParamField>
+
+**Returns:** `Promise<Texture>`
+
+---
+
+### `create(source, options?)`
+
+Synchronously creates a `Texture` from an existing browser media element or bitmap. Useful when you already have an image decoded in memory — for example a procedurally drawn `HTMLCanvasElement` or a decoded `ImageBitmap`.
+
+```typescript
+const canvas = document.getElementById("myCanvas") as HTMLCanvasElement;
+const tex = rapid.texture.create(canvas, { key: "myCanvas" });
+```
+
+**Parameters**
+
+<ParamField path="source" type="Images" required>
+  The pixel source. Accepted types: `HTMLImageElement`, `HTMLCanvasElement`,
+  `HTMLVideoElement`, `ImageBitmap`, `OffscreenCanvas`.
+</ParamField>
+
+<ParamField path="options" type="ITextureOptions">
+  Optional texture configuration. If `options.key` is provided and a cached
+  texture with that key already exists, the existing `BaseTexture` is reused.
+</ParamField>
+
+**Returns:** `Texture`
+
+---
+
+### `createRenderTexture(options)`
+
+Creates a `RenderTexture` — a texture backed by a WebGL framebuffer that you can draw into. See the [`RenderTexture`](/api/render-texture) reference for full details on drawing and pixel readback.
+
+```typescript
+const rt = rapid.texture.createRenderTexture({
+  width: 512,
+  height: 512,
+  clearColor: Color.Transparent,
+});
+```
+
+**Parameters**
+
+<ParamField path="options" type="IRenderTextureOptions" required>
+  Configuration for the offscreen framebuffer. See the
+  [`RenderTexture`](/api/render-texture) page for all fields.
+</ParamField>
+
+**Returns:** `RenderTexture`
+
+---
+
+### `createTextTexture(options?)`
+
+Creates a `TextTexture` — a texture that renders styled text via an internal HTML5 canvas and uploads the result to the GPU. See the [`TextTexture`](/api/text-texture) reference for styling and live-update details.
+
+```typescript
+const label = rapid.texture.createTextTexture({
+  text: "Hello, World!",
+  fontSize: 28,
+  fill: "#ffffff",
+});
+```
+
+**Parameters**
+
+<ParamField path="options" type="ITextOptions">
+  Optional text content and style configuration. See the
+  [`TextTexture`](/api/text-texture) page for all fields.
+</ParamField>
+
+**Returns:** `TextTexture`
+
+---
+
+### `destroy(textureOrUrl, force?)`
+
+Destroys a texture and, if the underlying `BaseTexture` reference count drops to zero (or `force` is `true`), removes the WebGL texture from the GPU and evicts it from the cache.
+
+```typescript
+// By URL
+rapid.texture.destroy("/assets/hero.png");
+
+// By Texture instance
+rapid.texture.destroy(myTexture);
+
+// Force-destroy immediately regardless of other references
+rapid.texture.destroy(myTexture, true);
+```
+
+**Parameters**
+
+<ParamField path="textureOrUrl" type="Texture | BaseTexture | string" required>
+  The resource to destroy. Accepts a `Texture` instance, a `BaseTexture`
+  instance, or the URL string that was used to load the texture.
+</ParamField>
+
+<ParamField path="force" type="boolean" default="false">
+  When `true`, the underlying `BaseTexture` is destroyed immediately regardless
+  of its current `refCount`. Use with caution — other `Texture` views sharing
+  the same `BaseTexture` will be left with dangling GPU references.
+</ParamField>
+
+**Returns:** `void`
+
+---
+
+### `destroyAll()`
+
+Destroys every cached `BaseTexture` and clears the internal cache. Reference counts are ignored. Call this during a full scene teardown or when shutting down the renderer.
+
+```typescript
+rapid.texture.destroyAll();
+```
+
+**Returns:** `void`
+
+---
+
+## ITextureOptions
+
+Options accepted by `load()`, `create()`, and the `RenderTexture`/`TextTexture` factory methods.
+
+<ParamField path="textureFilter" type="TextureFilterMode">
+  Controls how the texture is sampled when scaled.
+
+  | Value | Description |
+  |---|---|
+  | `TextureFilterMode.NEAREST` | Pixel-perfect, no blending. Default. |
+  | `TextureFilterMode.LINEAR` | Bilinear interpolation — smoother at scale. |
+</ParamField>
+
+<ParamField path="wrap" type="TextureWrapMode">
+  Controls how UV coordinates outside the `[0, 1]` range are handled.
+
+  | Value | Description |
+  |---|---|
+  | `TextureWrapMode.CLAMP` | Clamps to the edge pixel. |
+  | `TextureWrapMode.REPEAT` | Tiles the texture. |
+  | `TextureWrapMode.MIRRORED_REPEAT` | Tiles with alternating mirror flips. |
+</ParamField>
+
+<ParamField path="premultipliedAlpha" type="boolean">
+  Whether the texture data uses premultiplied alpha. When set, the WebGL
+  `UNPACK_PREMULTIPLY_ALPHA_WEBGL` pixel store flag is toggled accordingly.
+</ParamField>
+
+<ParamField path="key" type="string">
+  An explicit cache key. If provided, the resulting `BaseTexture` is stored in
+  the cache under this key and reused on subsequent `create()` calls with the
+  same key. Has no effect on `load()` (which always uses the URL as key).
+</ParamField>

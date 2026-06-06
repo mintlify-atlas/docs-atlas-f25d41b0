@@ -1,0 +1,234 @@
+---
+title: "GLShader — WebGL Shader Program Wrapper"
+sidebarTitle: "GLShader"
+description: "API reference for GLShader: create compiled WebGL shader programs, auto-parsed uniforms and attributes, setUniform, setUniforms, VAO management, and lifecycle."
+---
+
+`GLShader` wraps a compiled WebGL2 program. It auto-parses attribute and uniform names and types from GLSL source at construction time, so you can set them by name without ever querying locations manually. Each instance owns a dedicated VAO and exposes a clean API for uploading uniforms, binding vertex attributes, and managing GPU lifecycle.
+
+## Constructor
+
+```typescript
+new GLShader(gl: WebGL2RenderingContext, vs: string, fs: string, attributes?: IAttribute[])
+```
+
+<ParamField path="gl" type="WebGL2RenderingContext" required>
+  The WebGL2 rendering context used to compile and link the shader program.
+</ParamField>
+
+<ParamField path="vs" type="string" required>
+  Vertex shader GLSL source. Parsed for `in` and `uniform` declarations to populate `attributeLoc` and `uniformLoc`.
+</ParamField>
+
+<ParamField path="fs" type="string" required>
+  Fragment shader GLSL source. Parsed the same way as the vertex source; uniform declarations in either stage are merged into the same map.
+</ParamField>
+
+<ParamField path="attributes" type="IAttribute[]">
+  Optional array of attribute descriptors. When provided, `setAttributes` is called immediately after the VAO is created so the binding state is recorded in the VAO.
+</ParamField>
+
+## Public Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `program` | `WebGLProgram` | The linked WebGL program object. |
+| `attributeLoc` | `Record<string, number>` | Map of GLSL attribute name → `gl.getAttribLocation` result, populated automatically by the GLSL parser. |
+| `uniformLoc` | `Record<string, WebGLUniformLocation>` | Map of GLSL uniform name → `gl.getUniformLocation` result, populated automatically. |
+| `isCustom` | `boolean` | `true` when this shader was produced by `CustomGlShader`; used internally by the render pipeline. |
+| `padding` | `number` | Extra pixels this shader needs outside the sprite quad boundary (e.g. for glow or outline effects). |
+| `shaderId` | `number` | Monotonically-increasing debug identifier assigned at construction. |
+| `vao` | `WebGLVertexArrayObject` | The vertex array object that records all attribute pointer bindings for this program. |
+
+## Methods
+
+### `use()`
+
+Activates this shader program on the GL context (`gl.useProgram`). Call before issuing draw calls that should use this shader.
+
+```typescript
+shader.use();
+```
+
+---
+
+### `bindVAO()`
+
+Binds the shader's VAO (`gl.bindVertexArray`). Call before recording new attribute bindings or before a draw call that replays recorded bindings.
+
+```typescript
+shader.bindVAO();
+```
+
+---
+
+### `unbindVAO()`
+
+Unbinds the current VAO by binding `null`. Call after recording attribute bindings to prevent accidental mutations.
+
+```typescript
+shader.unbindVAO();
+```
+
+---
+
+### `setUniform(name, value)`
+
+Set a single uniform by name. The correct `gl.uniform*` overload is chosen automatically based on the GLSL type parsed from the source. If the name is not found in `uniformLoc` the call is silently ignored.
+
+```typescript
+setUniform(name: string, value: UniformValue): void
+```
+
+```typescript
+shader.setUniform("uTime", 1.5);
+shader.setUniform("uColor", [1, 0, 0, 1]);
+shader.setUniform("uMVP", mat4Float32Array);
+```
+
+---
+
+### `setUniforms(map)`
+
+Batch-set uniforms from a plain object. Equivalent to calling `setUniform` once per key.
+
+```typescript
+setUniforms(uniforms: Record<string, UniformValue>): void
+```
+
+```typescript
+shader.setUniforms({
+  uTime:       1.5,
+  uResolution: [800, 600],
+  uMVP:        mat4,
+});
+```
+
+---
+
+### `setAttribute(attr)`
+
+Bind a single vertex attribute pointer, enable the array, and set the instancing divisor. The VBO that supplies data for this attribute must already be bound before calling this method.
+
+```typescript
+setAttribute(attr: IAttribute): void
+```
+
+---
+
+### `setAttributes(attrs)`
+
+Bind multiple attribute pointers at once. Calls `setAttribute` for each entry.
+
+```typescript
+setAttributes(attrs: IAttribute[]): void
+```
+
+---
+
+### `destroy()`
+
+Delete the underlying `WebGLProgram` and release GPU memory. After calling `destroy`, the `GLShader` instance must not be used again.
+
+```typescript
+shader.destroy();
+```
+
+---
+
+## IAttribute Interface
+
+Describes one vertex attribute binding passed to `setAttribute` or `setAttributes`.
+
+<ParamField path="name" type="string" required>
+  The GLSL attribute variable name exactly as it appears in the vertex shader source (e.g. `"aPosition"`).
+</ParamField>
+
+<ParamField path="size" type="number" required>
+  Number of scalar components per vertex: `1`, `2`, `3`, or `4`.
+</ParamField>
+
+<ParamField path="type" type="number">
+  WebGL type constant for individual components (e.g. `gl.FLOAT`, `gl.UNSIGNED_BYTE`). Defaults to `gl.FLOAT`.
+</ParamField>
+
+<ParamField path="normalized" type="boolean">
+  When `true`, integer values are mapped to the `[0, 1]` (unsigned) or `[-1, 1]` (signed) floating-point range. Defaults to `false`.
+</ParamField>
+
+<ParamField path="stride" type="number" required>
+  Byte distance between the start of one vertex's data and the start of the next vertex's data in the buffer.
+</ParamField>
+
+<ParamField path="offset" type="number">
+  Byte offset from the start of the stride block to the first component of this attribute. Defaults to `0`.
+</ParamField>
+
+<ParamField path="divisor" type="number">
+  Instancing divisor passed to `gl.vertexAttribDivisor`. `0` means the attribute advances once per vertex (default). `1` means once per instance.
+</ParamField>
+
+### Example
+
+```typescript
+shader.setAttributes([
+  { name: "aPosition", size: 2, stride: 16, offset: 0  },
+  { name: "aTexCoord", size: 2, stride: 16, offset: 8  },
+]);
+```
+
+---
+
+## UniformValue Type
+
+`UniformValue` is the union of all value types accepted by `setUniform` and `setUniforms`:
+
+```typescript
+type UniformValue =
+  | number                                    // float / int / bool / sampler2D
+  | [number, number]                          // vec2 / ivec2
+  | [number, number, number]                  // vec3 / ivec3
+  | [number, number, number, number]          // vec4 / ivec4
+  | Float32Array | number[]                   // mat2 (4 elems), mat3 (9), mat4 (16), or float arrays
+  | Int32Array;                               // int arrays / sampler arrays
+```
+
+The correct `gl.uniform*` variant is selected at runtime based on the GLSL type stored in the internal `uniformType` map:
+
+| GLSL type | Dispatch |
+|---|---|
+| `float` | `gl.uniform1f` |
+| `int`, `bool`, `sampler2D`, `samplerCube` | `gl.uniform1i` / `gl.uniform1iv` (array) |
+| `vec2` | `gl.uniform2fv` |
+| `vec3` | `gl.uniform3fv` |
+| `vec4` | `gl.uniform4fv` |
+| `ivec2`, `bvec2` | `gl.uniform2iv` |
+| `ivec3`, `bvec3` | `gl.uniform3iv` |
+| `ivec4`, `bvec4` | `gl.uniform4iv` |
+| `mat2` | `gl.uniformMatrix2fv` |
+| `mat3` | `gl.uniformMatrix3fv` |
+| `mat4` | `gl.uniformMatrix4fv` |
+
+When a type cannot be determined (e.g. the uniform was injected by a custom template), a fallback dispatcher guesses the correct call from the value's runtime length.
+
+---
+
+## Auto-Parsing from GLSL
+
+The constructor calls an internal `parseShader` method on both the vertex and fragment source strings. It extracts all declarations matching:
+
+- **Attributes** — `in <type> <name>` (GLSL ES 3.0) or `attribute <type> <name>` (GLSL ES 1.0)
+- **Uniforms** — `uniform <type> <name>` or `uniform <type> <name>[N]` (array form)
+
+For every extracted name the corresponding `gl.getAttribLocation` / `gl.getUniformLocation` is looked up once and cached in `attributeLoc` / `uniformLoc`. The GLSL type string is stored internally so `setUniform` can dispatch without any additional introspection at call time.
+
+Array uniforms (e.g. `uniform sampler2D uTextures[8]`) are flagged internally so `gl.uniform1iv` is used instead of `gl.uniform1i`.
+
+```typescript
+// Both sources are parsed — uniforms declared in either stage are available
+const shader = new GLShader(gl, vertexSrc, fragmentSrc);
+
+// These names come directly from the GLSL source
+shader.setUniform("uProjection", projMatrix);
+shader.setUniform("uTextures", new Int32Array([0, 1, 2, 3]));
+```

@@ -1,0 +1,194 @@
+---
+title: "Drawing Sprites and Images with Rapid.js"
+sidebarTitle: "Sprites"
+description: "Draw textured sprites with position, rotation, scale, color tinting, UV flipping, and custom shaders. Understand instanced batching for maximum performance."
+---
+
+Sprites are the primary drawing primitive in Rapid.js. Every image you display — a character, a background tile, a UI icon — is drawn as a sprite quad that maps a `Texture` onto two GPU triangles. Under the hood, Rapid batches sprites that share the same texture atlas into a single instanced draw call, so you can render thousands of sprites per frame without thrashing the GPU.
+
+## Drawing a Basic Sprite
+
+Load a texture through `rapid.texture.load()` (or create one synchronously with `rapid.texture.create()`), then pass it to `drawSprite`. The quad is placed at the world origin by default.
+
+```typescript
+const texture = await rapid.texture.load("player.png");
+
+// Inside your game loop:
+rapid.drawSprite({ texture });
+```
+
+## ISpriteOptions Reference
+
+`drawSprite` accepts a single options object that combines sprite-specific fields with the shared `ITransformOptions`.
+
+### Sprite fields
+
+<ParamField path="texture" type="Texture" required>
+  The texture to render. Must be a valid `Texture` instance returned by `rapid.texture.load()`, `rapid.texture.create()`, or `splitGrid()`.
+</ParamField>
+
+<ParamField path="color" type="Color">
+  A tint color multiplied against every texel. Defaults to opaque white (`0xFFFFFFFF`), which renders the texture unchanged. Set the alpha channel below 255 for transparency.
+</ParamField>
+
+<ParamField path="flipX" type="boolean">
+  Mirrors the sprite horizontally by swapping UV coordinates on the X axis. Defaults to `false`.
+</ParamField>
+
+<ParamField path="flipY" type="boolean">
+  Mirrors the sprite vertically. The final flip is XOR'd with any `flipY` flag stored on the texture itself (e.g. from a `RenderTexture`). Defaults to `false`.
+</ParamField>
+
+<ParamField path="padding" type="number">
+  Extra pixels added around the rendered quad. This expands the quad beyond the texture's logical size so that filter shaders (blur, glow, outline) have room to sample neighbouring pixels without clipping. Only needed when pairing `drawSprite` with a custom filter shader; leave it unset for normal sprites.
+</ParamField>
+
+<ParamField path="shader" type="DrawShader">
+  A custom `GLShader` or `CustomGlShader` that overrides the region's default program for this draw call. Use this to apply per-sprite effects such as dissolve, palette swap, or outline.
+</ParamField>
+
+### Transform fields (ITransformOptions)
+
+All transform fields are optional. When none are provided, no matrix push/pop is performed, making the call as cheap as possible.
+
+<ParamField path="x" type="number">
+  Horizontal position in logical pixels.
+</ParamField>
+
+<ParamField path="y" type="number">
+  Vertical position in logical pixels.
+</ParamField>
+
+<ParamField path="position" type="Vec2">
+  Position as a `Vec2`. Equivalent to setting `x` and `y` together.
+</ParamField>
+
+<ParamField path="rotation" type="number">
+  Rotation in radians, applied around the `origin` anchor.
+</ParamField>
+
+<ParamField path="scale" type="number | Vec2">
+  Uniform scale as a number, or non-uniform scale as a `Vec2`. A value of `2` doubles both axes.
+</ParamField>
+
+<ParamField path="origin" type="number | Vec2">
+  Normalized anchor point used for rotation and scale (0 = top-left corner, 0.5 = center, 1 = bottom-right corner). A single number applies to both axes; a `Vec2` sets them independently.
+</ParamField>
+
+<ParamField path="offsetX" type="number">
+  Additional pixel offset applied along the X axis after all other transforms.
+</ParamField>
+
+<ParamField path="offsetY" type="number">
+  Additional pixel offset applied along the Y axis after all other transforms.
+</ParamField>
+
+<ParamField path="offset" type="Vec2">
+  Combined pixel offset as a `Vec2`. Equivalent to setting `offsetX` and `offsetY` together.
+</ParamField>
+
+<ParamField path="saveTransform" type="boolean">
+  Whether to push/pop the matrix stack around this call. Defaults to `true`. Set to `false` if you want subsequent draw calls to inherit the transformed state.
+</ParamField>
+
+## Positioning and Transforming Sprites
+
+Pass `x`, `y`, `rotation`, `scale`, and `origin` directly in the options object. The `origin` field is a normalized anchor: `0` is the top-left corner, `0.5` centers around the sprite's midpoint.
+
+```typescript
+rapid.drawSprite({
+  texture,
+  x: 400,
+  y: 300,
+  rotation: Math.PI / 4, // 45 degrees
+  scale: 2,
+  origin: 0.5,           // rotate and scale around the center
+});
+```
+
+## Color Tinting
+
+The `color` field multiplies each pixel of the texture by the given color. Use this for hit-flash effects, transparency, or colorizing a grayscale sprite.
+
+```typescript
+rapid.drawSprite({
+  texture,
+  x: 100,
+  y: 100,
+  color: new Color(255, 128, 0, 200), // orange tint, semi-transparent
+});
+```
+
+Passing `Color.White` (the default) leaves the texture unchanged. Setting alpha to `0` makes the sprite invisible.
+
+## Flipping Sprites
+
+Use `flipX` and `flipY` to mirror a sprite without needing a separate texture asset. This is useful for characters that need to face left or right.
+
+```typescript
+// Face left by flipping horizontally
+rapid.drawSprite({
+  texture: characterTexture,
+  x: 200,
+  y: 150,
+  flipX: facingLeft,
+});
+```
+
+<Note>
+  `flipY` is XOR'd with the `flipY` flag stored on the texture object. `RenderTexture` instances have `flipY = true` by default to correct the framebuffer's inverted Y axis, so setting `flipY: true` on the options will cancel that and render the texture upright.
+</Note>
+
+## Sprite Sheet Animation
+
+Use `texture.splitGrid()` to slice a sprite sheet into an array of `Texture` sub-regions. Each sub-texture shares the same underlying GPU resource — no extra uploads.
+
+```typescript
+const spriteSheet = await rapid.texture.load("character.png");
+const frames = spriteSheet.splitGrid(64, 64); // each cell is 64×64 pixels
+
+let frame = 0;
+
+// Inside your game loop (dt = delta time in seconds):
+rapid.drawSprite({
+  texture: frames[Math.floor(frame)],
+  x: 200,
+  y: 200,
+});
+
+frame = (frame + dt * 12) % frames.length; // advance at 12 fps
+```
+
+`splitGrid(cellWidth, cellHeight, cols?, rows?)` reads left-to-right, top-to-bottom. You can pass explicit `cols` and `rows` to limit the region it slices.
+
+## Custom Shaders
+
+Pass a `shader` to override the sprite region's default program for a single draw call. This lets you apply per-sprite screen-space effects without switching pipelines globally.
+
+```typescript
+rapid.drawSprite({
+  texture,
+  x: 300,
+  y: 200,
+  shader: outlineShader,
+  padding: 4, // give the outline shader room to expand beyond the quad edge
+});
+```
+
+<Tip>
+  When a custom filter shader samples pixels outside the sprite's logical bounds (for blur, glow, or outline effects), increase `padding` to expand the quad area. Without padding the shader's extra samples will be clipped to the sprite edge.
+</Tip>
+
+## Performance: Instanced Batching
+
+Rapid uses **GPU instancing** for sprites. Each `drawSprite` call appends transform and UV data to a CPU-side typed array. All sprites that share the same texture and shader are flushed together in one `drawArraysInstanced` call when the texture or shader changes.
+
+<Tip>
+  Group draw calls by texture. Drawing 200 sprites from the same atlas without switching textures in between results in a single draw call. Interleaving different textures forces a flush at every switch.
+</Tip>
+
+The `drawcallCount` property on the `Rapid` instance tracks how many draw calls were issued in the last frame — useful for profiling:
+
+```typescript
+console.log(rapid.drawcallCount); // check after rapid.flush()
+```

@@ -1,0 +1,846 @@
+---
+title: "Rapid Class — Core WebGL2 Renderer API"
+sidebarTitle: "Rapid"
+description: "Complete API reference for the Rapid class: constructor options, draw methods, blend modes, masking, render textures, scissor clipping, and frame lifecycle."
+---
+
+The `Rapid` class is the central object that owns the WebGL2 context, manages rendering regions, and exposes all draw methods. Every frame you call `clear()`, issue draw calls, and the batched geometry is automatically flushed to the GPU. A single `Rapid` instance maps to a single `<canvas>` element.
+
+---
+
+## Constructor
+
+```typescript
+new Rapid(options: IAppOptions)
+```
+
+Creates a new `Rapid` renderer attached to the supplied canvas. The constructor acquires a `WebGL2RenderingContext`, allocates internal regions, and calls `resize()` once to establish the initial viewport and projection matrix.
+
+### IAppOptions
+
+<ParamField path="canvas" type="HTMLCanvasElement" required>
+  The target `<canvas>` element. Rapid will call `getContext("webgl2")` on this element and manage its dimensions.
+</ParamField>
+
+<ParamField path="logicWidth" type="number">
+  Logical coordinate-space width in CSS pixels. Draw calls use this coordinate system. Defaults to `physicsWidth / dpr` when omitted.
+</ParamField>
+
+<ParamField path="logicHeight" type="number">
+  Logical coordinate-space height in CSS pixels. Defaults to `physicsHeight / dpr` when omitted.
+</ParamField>
+
+<ParamField path="physicsWidth" type="number">
+  GPU pixel width of the WebGL backbuffer. Defaults to `canvas.clientWidth × devicePixelRatio`.
+</ParamField>
+
+<ParamField path="physicsHeight" type="number">
+  GPU pixel height of the WebGL backbuffer. Defaults to `canvas.clientHeight × devicePixelRatio`.
+</ParamField>
+
+<ParamField path="backgroundColor" type="Color">
+  Default clear color applied by `clear()`. Defaults to `Color.Black` (`0, 0, 0, 255`).
+</ParamField>
+
+<ParamField path="antialias" type="boolean">
+  Request MSAA antialiasing from the WebGL context. Default `false`. Has no effect after context creation.
+</ParamField>
+
+<ParamField path="textureFilter" type="TextureFilterMode">
+  Default texture sampling filter. `TextureFilterMode.NEAREST` (default) preserves hard pixel edges; `TextureFilterMode.LINEAR` smooths magnified textures.
+</ParamField>
+
+<ParamField path="premultipliedAlpha" type="boolean">
+  Whether texture data is treated as having premultiplied alpha. When `true` (default), the blend equation uses `(ONE, ONE_MINUS_SRC_ALPHA)` for correct compositing.
+</ParamField>
+
+<ParamField path="roundPixels" type="boolean">
+  When `true`, vertex positions are snapped to integer pixels before upload, eliminating sub-pixel jitter on pixel-art assets. Default `false`.
+</ParamField>
+
+<ParamField path="scaleMode" type="CanvasScaleMode">
+  Controls how the canvas scales when the CSS size differs from the logical size. See the [CanvasScaleMode](#canvasscalemode) enum for details. Defaults to `CanvasScaleMode.CanvasItem`.
+</ParamField>
+
+**Example**
+
+```typescript
+import { Rapid, Color } from "rapid-render";
+
+const rapid = new Rapid({
+  canvas: document.getElementById("game-canvas") as HTMLCanvasElement,
+  logicWidth: 1280,
+  logicHeight: 720,
+  backgroundColor: new Color(30, 30, 30, 255),
+  antialias: false,
+  textureFilter: TextureFilterMode.NEAREST,
+});
+```
+
+---
+
+## Public Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `gl` | `WebGL2RenderingContext` | The active WebGL2 context. Use for low-level GL calls. |
+| `canvas` | `HTMLCanvasElement` | The target canvas element passed at construction. |
+| `texture` | `TextureManager` | Manager for creating and caching textures. |
+| `matrixStack` | `MatrixStack` | Hierarchical transform stack. See [MatrixStack](/api/matrix-stack). |
+| `matrix` | `MatrixStore` | Direct access to the flat matrix buffer. See [MatrixStore](/api/matrix-stack). |
+| `logicWidth` | `number` | Logical coordinate-space width (CSS pixels). |
+| `logicHeight` | `number` | Logical coordinate-space height (CSS pixels). |
+| `physicsWidth` | `number` | GPU backbuffer width in physical pixels. |
+| `physicsHeight` | `number` | GPU backbuffer height in physical pixels. |
+| `dpr` | `number` | Device pixel ratio (`window.devicePixelRatio`). |
+| `backgroundColor` | `Color` | Clear color used by `clear()`. Writable at any time. |
+| `drawcallCount` | `number` | Number of WebGL draw calls issued since the last `clear()`. Useful for performance profiling. |
+| `width` | `number` | Getter — alias for `logicWidth`. |
+| `height` | `number` | Getter — alias for `logicHeight`. |
+
+---
+
+## Frame Lifecycle Methods
+
+Every game loop iteration follows the same three-step pattern: clear the previous frame, issue draw calls, then let Rapid automatically flush or call `flush()` explicitly.
+
+### `clear()`
+
+```typescript
+clear(): void
+```
+
+Clears the active framebuffer using `backgroundColor`, resets `drawcallCount` to zero, and calls `matrixStack.reset()` to wipe all saved transform state. Call this at the start of every frame.
+
+```typescript
+function gameLoop() {
+  rapid.clear();
+
+  rapid.drawSprite({ texture: backgroundTexture });
+  rapid.drawSprite({ texture: playerTexture, x: playerX, y: playerY });
+
+  requestAnimationFrame(gameLoop);
+}
+```
+
+### `flush()`
+
+```typescript
+flush(): void
+```
+
+Immediately submits any pending batched draw calls to the GPU and releases the active rendering region. Rapid calls `flush()` automatically whenever it needs to switch shaders, textures, or blend modes. You only need to call it manually when mixing Rapid draw calls with raw WebGL API code.
+
+```typescript
+rapid.drawSprite({ texture: myTexture });
+rapid.flush(); // ensure the sprite is drawn before raw GL work
+gl.readPixels(...);
+```
+
+### `resize(logicWidth, logicHeight, cssWidth?, cssHeight?)`
+
+```typescript
+resize(logicWidth: number, logicHeight: number, cssWidth?: number, cssHeight?: number): void
+```
+
+Updates the viewport and orthographic projection. Flush is called internally. If `cssWidth`/`cssHeight` are provided, the canvas `style.width` and `style.height` are updated as well.
+
+<ParamField path="logicWidth" type="number" required>
+  New logical width. Draw-call coordinates use this space.
+</ParamField>
+
+<ParamField path="logicHeight" type="number" required>
+  New logical height.
+</ParamField>
+
+<ParamField path="cssWidth" type="number">
+  Optional CSS display width. Updates `canvas.style.width` and recalculates `physicsWidth = cssWidth × dpr`.
+</ParamField>
+
+<ParamField path="cssHeight" type="number">
+  Optional CSS display height.
+</ParamField>
+
+```typescript
+window.addEventListener("resize", () => {
+  rapid.resize(1280, 720, window.innerWidth, window.innerHeight);
+});
+```
+
+---
+
+## Draw Methods
+
+All draw methods accept an options object that extends `ITransformOptions`, so you can pass transform properties (`x`, `y`, `rotation`, `scale`, `origin`, etc.) directly alongside shape-specific properties. See [ITransformOptions](/api/matrix-stack#itransformoptions-interface) for the full list.
+
+### `drawSprite(options)`
+
+```typescript
+drawSprite(options: ISpriteOptions): void
+```
+
+Draws a textured quad using the fast sprite batching path.
+
+<ParamField path="options.texture" type="Texture" required>
+  The texture (or atlas sub-region) to render.
+</ParamField>
+
+<ParamField path="options.color" type="Color">
+  Tint color multiplied with every fragment. Default white (`0xFFFFFFFF`).
+</ParamField>
+
+<ParamField path="options.flipX" type="boolean">
+  Mirror the sprite horizontally.
+</ParamField>
+
+<ParamField path="options.flipY" type="boolean">
+  Mirror the sprite vertically.
+</ParamField>
+
+<ParamField path="options.padding" type="number">
+  Expands the rendered quad by this many pixels on every side, allowing shader effects (e.g. outlines) to bleed outside the original sprite boundary.
+</ParamField>
+
+<ParamField path="options.shader" type="DrawShader">
+  Custom `GLShader` or `CustomGlShader` to override the default sprite shader.
+</ParamField>
+
+```typescript
+rapid.drawSprite({
+  texture: heroTexture,
+  x: 100,
+  y: 200,
+  rotation: Math.PI / 6,
+  origin: 0.5,          // pivot at centre
+  flipX: false,
+  color: new Color(255, 200, 200, 255),
+});
+```
+
+### `drawRect(options)`
+
+```typescript
+drawRect(options: IRectOptions): void
+```
+
+Draws a filled rectangle, optionally textured.
+
+<ParamField path="options.width" type="number" required>
+  Rectangle width in logical pixels.
+</ParamField>
+
+<ParamField path="options.height" type="number" required>
+  Rectangle height in logical pixels.
+</ParamField>
+
+<ParamField path="options.color" type="Color">
+  Fill color. Defaults to opaque white.
+</ParamField>
+
+<ParamField path="options.texture" type="Texture">
+  Optional texture stretched over the rectangle.
+</ParamField>
+
+```typescript
+rapid.drawRect({
+  width: 200,
+  height: 100,
+  x: 50,
+  y: 50,
+  color: new Color(80, 160, 255, 200),
+});
+```
+
+### `drawCircle(options)`
+
+```typescript
+drawCircle(options: ICircleOptions): void
+```
+
+Draws a filled circle approximated by a triangle fan.
+
+<ParamField path="options.radius" type="number" required>
+  Circle radius in logical pixels.
+</ParamField>
+
+<ParamField path="options.color" type="Color">
+  Fill color. Defaults to opaque white.
+</ParamField>
+
+<ParamField path="options.segments" type="number">
+  Number of triangles used to approximate the circle. Higher values produce smoother edges at a cost of more vertices. Default `32`.
+</ParamField>
+
+```typescript
+rapid.drawCircle({
+  radius: 64,
+  x: 400,
+  y: 300,
+  color: new Color(255, 100, 100, 255),
+  segments: 48,
+});
+```
+
+### `drawLine(options)`
+
+```typescript
+drawLine(options: ILineOptions): void
+```
+
+Draws a polyline with configurable width, caps, and optional texture.
+
+<ParamField path="options.points" type="Vec2[]" required>
+  Array of control points defining the line path. Minimum 2 points required.
+</ParamField>
+
+<ParamField path="options.width" type="number">
+  Stroke width in logical pixels. Default `1`.
+</ParamField>
+
+<ParamField path="options.color" type="Color">
+  Stroke color.
+</ParamField>
+
+<ParamField path="options.closed" type="boolean">
+  When `true`, connects the last point back to the first.
+</ParamField>
+
+<ParamField path="options.roundCap" type="boolean">
+  Adds semicircular caps at both ends of an open polyline.
+</ParamField>
+
+<ParamField path="options.texture" type="Texture">
+  Texture to map along the line.
+</ParamField>
+
+<ParamField path="options.textureMode" type="LineTextureMode">
+  `STRETCH` maps the texture once across the full length; `REPEAT` tiles it.
+</ParamField>
+
+```typescript
+rapid.drawLine({
+  points: [new Vec2(0, 0), new Vec2(200, 100), new Vec2(400, 0)],
+  width: 4,
+  color: new Color(255, 255, 0, 255),
+  roundCap: true,
+});
+```
+
+### `drawGraphic(options)`
+
+```typescript
+drawGraphic(options: IGraphicOptions): void
+```
+
+Draws arbitrary geometry from a list of points.
+
+<ParamField path="options.points" type="DrawPoint[]" required>
+  Vertices as `Vec2` or `{x, y}` objects.
+</ParamField>
+
+<ParamField path="options.color" type="Color | Color[]">
+  Uniform tint or per-vertex color array.
+</ParamField>
+
+<ParamField path="options.drawMode" type="number">
+  WebGL drawing mode constant (e.g. `gl.TRIANGLES`, `gl.TRIANGLE_FAN`). Defaults to `gl.TRIANGLES`.
+</ParamField>
+
+<ParamField path="options.uv" type="DrawPoint[]">
+  Per-vertex UV coordinates mapped to `options.texture`.
+</ParamField>
+
+<ParamField path="options.texture" type="Texture">
+  Optional texture to sample in the graphic shader.
+</ParamField>
+
+```typescript
+rapid.drawGraphic({
+  drawMode: rapid.gl.TRIANGLES,
+  points: [
+    { x: 0,   y: -50 },
+    { x: 50,  y: 50  },
+    { x: -50, y: 50  },
+  ],
+  color: new Color(255, 200, 0, 255),
+  x: 300,
+  y: 300,
+});
+```
+
+---
+
+## Low-Level Vertex API
+
+Use these methods when you need direct control over geometry data — for example, to build custom sprite atlases, particle meshes, or procedural shapes that don't fit the higher-level helpers.
+
+<Note>
+Always bracket `addGraphicVertex` / `addRectVertex` / `addCircleVertex` calls with a matching `startGraphic()` … `endGraphic()` pair. Calling them outside that bracket is undefined behaviour.
+</Note>
+
+### `startGraphic(drawMode?, texture?, shader?, customMatrix?)`
+
+```typescript
+startGraphic(
+  drawMode?: number,
+  texture?: Texture,
+  shader?: GLShader | CustomGlShader,
+  customMatrix?: number
+): void
+```
+
+Begins a new geometry batch in the graphic region. The current world matrix is used unless `customMatrix` provides a different matrix index from `MatrixStore`.
+
+<ParamField path="drawMode" type="number">
+  WebGL primitive type. Default `gl.TRIANGLES`.
+</ParamField>
+
+<ParamField path="texture" type="Texture">
+  Texture bound during this batch.
+</ParamField>
+
+<ParamField path="shader" type="GLShader | CustomGlShader">
+  Override shader for this batch.
+</ParamField>
+
+<ParamField path="customMatrix" type="number">
+  Index into `MatrixStore` to use as the transform. Defaults to `matrixStack.curWorldM`.
+</ParamField>
+
+### `addGraphicVertex(x, y, u?, v?, color?)`
+
+```typescript
+addGraphicVertex(
+  x: number,
+  y: number,
+  u?: number,
+  v?: number,
+  color?: number
+): void
+```
+
+Pushes a single vertex into the current graphic batch.
+
+<ParamField path="x" type="number" required>X coordinate in local space.</ParamField>
+<ParamField path="y" type="number" required>Y coordinate in local space.</ParamField>
+<ParamField path="u" type="number">U texture coordinate (0–1). Default `0`.</ParamField>
+<ParamField path="v" type="number">V texture coordinate (0–1). Default `0`.</ParamField>
+<ParamField path="color" type="number">32-bit ABGR vertex color. Default `0xFFFFFFFF` (opaque white).</ParamField>
+
+### `addRectVertex(w, h, color?)`
+
+```typescript
+addRectVertex(w: number, h: number, color?: Color): void
+```
+
+Pushes four vertices for a rectangle from `(0, 0)` to `(w, h)` with UV coordinates mapped to `(0,0)–(1,1)`. Intended for use with `gl.TRIANGLE_FAN`.
+
+### `addCircleVertex(r, color?, segments?)`
+
+```typescript
+addCircleVertex(r: number, color?: Color, segments?: number): void
+```
+
+Pushes `segments` vertices arranged around the origin at radius `r`. Use with `gl.TRIANGLE_FAN` alongside a centre vertex at `(0, 0, 0.5, 0.5)`. Default `segments` is `32`.
+
+### `endGraphic()`
+
+```typescript
+endGraphic(): void
+```
+
+Closes the current geometry batch, making it eligible for the next flush.
+
+**Full example — custom hexagon**
+
+```typescript
+rapid.startGraphic(rapid.gl.TRIANGLE_FAN);
+rapid.addGraphicVertex(0, 0, 0.5, 0.5); // centre vertex
+
+const sides = 6;
+for (let i = 0; i <= sides; i++) {
+  const angle = (i / sides) * Math.PI * 2;
+  rapid.addGraphicVertex(
+    Math.cos(angle) * 40,
+    Math.sin(angle) * 40,
+    0.5 + Math.cos(angle) * 0.5,
+    0.5 + Math.sin(angle) * 0.5,
+  );
+}
+rapid.endGraphic();
+```
+
+---
+
+## Render Texture Methods
+
+Render textures let you draw into an off-screen framebuffer and then use the result as a texture in subsequent draw calls. This is the foundation for post-processing, cached layers, and multi-pass effects.
+
+### `enterRenderTexture(rt)`
+
+```typescript
+enterRenderTexture(rt: RenderTexture): void
+```
+
+Binds `rt` as the active render target, flushes any pending draw calls, and updates the viewport and projection to match the render texture dimensions. All subsequent draw calls go into `rt` until `leaveRenderTexture()` is called.
+
+### `leaveRenderTexture()`
+
+```typescript
+leaveRenderTexture(): void
+```
+
+Unbinds the current render texture, restores the main canvas as the render target, and resets the viewport and projection to the logical canvas dimensions.
+
+### `drawToRenderTexture(rt, cb, color?)`
+
+```typescript
+drawToRenderTexture(
+  rt: RenderTexture,
+  cb: () => void,
+  color?: Color | null
+): void
+```
+
+Convenience wrapper that enters the render texture, optionally clears it, executes `cb`, and then leaves the render texture — even if `cb` throws.
+
+<ParamField path="rt" type="RenderTexture" required>The target render texture.</ParamField>
+<ParamField path="cb" type="() => void" required>Draw calls to execute inside the render texture.</ParamField>
+<ParamField path="color" type="Color | null">
+  Clear color before executing `cb`. Pass `null` to skip clearing and composite on top of existing RT contents. Defaults to transparent black `(0, 0, 0, 0)`.
+</ParamField>
+
+```typescript
+const offscreen = rapid.texture.createRenderTexture({ width: 512, height: 512 });
+
+rapid.drawToRenderTexture(offscreen, () => {
+  rapid.drawSprite({ texture: backgroundTex });
+  rapid.drawSprite({ texture: characterTex, x: 200, y: 150 });
+});
+
+// Later in the main frame:
+rapid.drawSprite({ texture: offscreen, x: 0, y: 0 });
+```
+
+### `clearRenderTexture(color?)`
+
+```typescript
+clearRenderTexture(color?: Color): void
+```
+
+Clears the currently-bound render texture to `color`. Defaults to transparent black. Must be called while a render texture is active (i.e. inside an `enterRenderTexture` / `leaveRenderTexture` block).
+
+### `applyFilters(source, shaders)`
+
+```typescript
+applyFilters(source: Texture, shaders: CustomGlShader[]): RenderTexture
+```
+
+Applies a chain of custom shaders to `source` using an internal ping-pong pair of render textures. Each shader receives the output of the previous one as its input texture. The two internal render textures are reused across calls (resized on demand). The returned `RenderTexture` is valid until the next `applyFilters` call.
+
+<ParamField path="source" type="Texture" required>The input texture to start the filter chain from.</ParamField>
+<ParamField path="shaders" type="CustomGlShader[]" required>Ordered array of shaders to apply. Must not be empty.</ParamField>
+
+<ResponseField name="return" type="RenderTexture">
+  The render texture containing the final filtered result. Render it with `drawSprite` to display on screen.
+</ResponseField>
+
+```typescript
+const result = rapid.applyFilters(mySprite, [blurShader, outlineShader]);
+
+rapid.drawSprite({ texture: result });
+```
+
+<Tip>
+`applyFilters` saves and restores the matrix stack internally, so it is safe to call mid-frame without disrupting your transform hierarchy.
+</Tip>
+
+---
+
+## Convenience Wrappers
+
+These methods bundle a common setup / teardown pattern into a single call, using `try / finally` to guarantee cleanup even if the callback throws.
+
+### `withTransform(cb, transform?, width?, height?)`
+
+```typescript
+withTransform(
+  cb: () => void,
+  transform?: ITransformOptions,
+  width?: number,
+  height?: number
+): void
+```
+
+Saves the current matrix state, optionally applies a transform, executes `cb`, then restores. When `transform` is omitted a bare save/restore wraps the callback. When `transform.saveTransform` is `false` the save step is skipped.
+
+<ParamField path="cb" type="() => void" required>Draw calls to execute within the transform.</ParamField>
+<ParamField path="transform" type="ITransformOptions">Transform options (position, rotation, scale, origin, …).</ParamField>
+<ParamField path="width" type="number">Logical width passed to origin anchor resolution. Default `0`.</ParamField>
+<ParamField path="height" type="number">Logical height passed to origin anchor resolution. Default `0`.</ParamField>
+
+```typescript
+// Simple save/restore
+rapid.withTransform(() => {
+  rapid.matrixStack.translate(100, 100);
+  rapid.drawSprite({ texture: tileTexture });
+});
+
+// With a full transform applied
+rapid.withTransform(() => {
+  rapid.drawSprite({ texture: heroTexture });
+}, { x: 320, y: 240, rotation: Math.PI / 4, origin: 0.5 },
+   heroTexture.width, heroTexture.height);
+```
+
+### `withBlendMode(mode, cb)`
+
+```typescript
+withBlendMode(mode: BlendMode, cb: () => void): void
+```
+
+Sets the blend mode to `mode`, runs `cb`, then restores `BlendMode.NORMAL`.
+
+```typescript
+rapid.withBlendMode(BlendMode.ADD, () => {
+  rapid.drawSprite({ texture: glowTexture });
+  rapid.drawSprite({ texture: sparkTexture });
+});
+```
+
+### `withMask(maskCb, drawCb, type?, ref?)`
+
+```typescript
+withMask(
+  maskCb: () => void,
+  drawCb: () => void,
+  type?: MaskType,
+  ref?: number
+): void
+```
+
+High-level stencil mask helper. Clears the stencil buffer, writes the mask geometry from `maskCb` into the stencil buffer (invisible to the colour buffer), then draws `drawCb` clipped to the stencil region.
+
+<ParamField path="maskCb" type="() => void" required>Geometry that defines the mask shape.</ParamField>
+<ParamField path="drawCb" type="() => void" required>Draw calls rendered within the mask.</ParamField>
+<ParamField path="type" type="MaskType">
+  `MaskType.EQUAL` renders inside the mask (default); `MaskType.NOT_EQUAL` renders outside it.
+</ParamField>
+<ParamField path="ref" type="number">Stencil reference value. Default `1`.</ParamField>
+
+```typescript
+rapid.withMask(
+  () => rapid.drawRect({ width: 200, height: 200, x: 100, y: 100 }),
+  () => rapid.drawSprite({ texture: sceneTexture }),
+);
+```
+
+### `withScissor(x, y, w, h, cb)`
+
+```typescript
+withScissor(x: number, y: number, width: number, height: number, cb: () => void): void
+```
+
+Enables GPU scissor clipping to the specified rectangle (in logical coordinates), runs `cb`, then disables scissoring.
+
+```typescript
+rapid.withScissor(50, 50, 300, 200, () => {
+  rapid.drawSprite({ texture: mapTexture });
+});
+```
+
+---
+
+## Mask / Stencil Methods
+
+For finer-grained control over multi-layer stencil masks, use the low-level methods directly.
+
+### `startDrawMask(ref?, mask?)`
+
+```typescript
+startDrawMask(ref?: number, mask?: number): void
+```
+
+Begins writing to the stencil buffer. Colour buffer writes are disabled during this phase. All geometry drawn after this call writes `ref` into the stencil.
+
+<ParamField path="ref" type="number">Stencil write value. Default `1`.</ParamField>
+<ParamField path="mask" type="number">Stencil bitmask. Default `0xFF`.</ParamField>
+
+### `endDrawMask()`
+
+```typescript
+endDrawMask(): void
+```
+
+Ends the stencil-write phase and re-enables colour buffer writing.
+
+### `clearMask(mask?)`
+
+```typescript
+clearMask(mask?: number): void
+```
+
+Clears the specified stencil bits. Default mask `0xFF` clears all stencil layers.
+
+### `enterMask(type, ref?, mask?)`
+
+```typescript
+enterMask(type: MaskType, ref?: number, mask?: number): void
+```
+
+Activates stencil testing so that subsequent draw calls are clipped according to the mask written by `startDrawMask`.
+
+<ParamField path="type" type="MaskType" required>`EQUAL` draws inside; `NOT_EQUAL` draws outside.</ParamField>
+<ParamField path="ref" type="number">Reference value to test against. Default `1`.</ParamField>
+<ParamField path="mask" type="number">Bitmask. Default `0xFF`.</ParamField>
+
+### `exitMask()`
+
+```typescript
+exitMask(): void
+```
+
+Disables stencil testing and restores the default stencil state (`ALWAYS` pass).
+
+### `drawMaskImage(options)`
+
+```typescript
+drawMaskImage(options: IMaskImageOptions): void
+```
+
+Convenience helper that renders `options.texture` into the stencil buffer as a mask rectangle using the texture's alpha channel.
+
+<ParamField path="options.texture" type="Texture" required>Texture whose alpha drives the mask shape.</ParamField>
+
+---
+
+## Blend Mode Methods
+
+### `setBlendMode(mode)`
+
+```typescript
+setBlendMode(mode: BlendMode): void
+```
+
+Flushes pending geometry, then configures WebGL's `blendFuncSeparate` for the requested mode. The alpha channel is handled separately from RGB to avoid darkening artifacts on off-screen render textures.
+
+```typescript
+rapid.setBlendMode(BlendMode.MULTIPLY);
+rapid.drawSprite({ texture: shadowTexture });
+rapid.setBlendMode(BlendMode.NORMAL);
+```
+
+<Tip>
+Prefer `withBlendMode()` when a blend mode only applies to a subset of draw calls — it guarantees restoration to `NORMAL` even if an exception is thrown.
+</Tip>
+
+---
+
+## Scissor Methods
+
+### `startScissor(x, y, width, height)`
+
+```typescript
+startScissor(x: number, y: number, width: number, height: number): void
+```
+
+Enables the WebGL scissor test restricted to the given rectangle expressed in **logical coordinates**. Internally converts to physical pixels and flips the Y axis for WebGL's bottom-left origin.
+
+### `endScissor()`
+
+```typescript
+endScissor(): void
+```
+
+Disables the scissor test and restores full-canvas rendering.
+
+---
+
+## Camera / Coordinate Utilities
+
+### `renderCamera(transform)`
+
+```typescript
+renderCamera(transform: ITransformOptions): void
+```
+
+Applies `transform` to the current matrix and then inverts it in-place, effectively implementing a 2D camera: moving the camera right translates all objects left, and so on.
+
+```typescript
+rapid.renderCamera({ x: cameraX, y: cameraY, rotation: cameraAngle });
+```
+
+### `logicToPhysics(p)`
+
+```typescript
+logicToPhysics(p: Vec2): Vec2
+```
+
+Converts a point from logical coordinate space to physical (GPU pixel) space.
+
+### `physicsToLogic(p)`
+
+```typescript
+physicsToLogic(p: Vec2): Vec2
+```
+
+Converts a point from physical pixel space back to logical coordinate space.
+
+### `cssToDevicePixel(p)`
+
+```typescript
+cssToDevicePixel(p: Vec2): Vec2
+```
+
+Multiplies the point by the device pixel ratio, converting CSS pixel coordinates to hardware pixel coordinates.
+
+### `devicePixelToCss(p)`
+
+```typescript
+devicePixelToCss(p: Vec2): Vec2
+```
+
+Divides the point by the device pixel ratio, converting hardware pixel coordinates to CSS pixel coordinates.
+
+---
+
+## Enums
+
+### BlendMode
+
+Controls how incoming (source) fragments are composited with the existing (destination) colour.
+
+| Value | Description |
+|---|---|
+| `BlendMode.NORMAL` | Standard alpha blending. Suitable for most sprites and UI. |
+| `BlendMode.ADD` | Additive blending — RGB values are summed. Ideal for glows, fire, and energy effects. |
+| `BlendMode.MULTIPLY` | Multiplies source and destination colours. Creates shadows and darkening effects. |
+| `BlendMode.SCREEN` | Inverts, multiplies, then inverts again. Softer additive look, avoids harsh white burn-out. |
+| `BlendMode.ERASE` | Subtracts source alpha from the destination. Useful for punch-through transparency in render textures. |
+
+### MaskType
+
+Determines which pixels survive the stencil test.
+
+| Value | Description |
+|---|---|
+| `MaskType.EQUAL` | Only pixels where stencil equals the reference value are drawn (render **inside** the mask). |
+| `MaskType.NOT_EQUAL` | Only pixels where stencil does **not** equal the reference value are drawn (render **outside** the mask). |
+
+### TextureFilterMode
+
+Default sampling filter applied to textures uploaded through `TextureManager`.
+
+| Value | Description |
+|---|---|
+| `TextureFilterMode.NEAREST` | Nearest-neighbour filtering. Preserves hard pixel edges; recommended for pixel art. |
+| `TextureFilterMode.LINEAR` | Bilinear filtering. Smooths magnified textures; better for high-resolution artwork. |
+
+### CanvasScaleMode
+
+Determines how the WebGL backbuffer relates to the CSS display size.
+
+| Value | Description |
+|---|---|
+| `CanvasScaleMode.CanvasItem` | The backbuffer matches the physical screen resolution (`logicSize × dpr`). Rotated sprites and lines are rasterised at full display resolution for maximum sharpness. |
+| `CanvasScaleMode.Viewport` | The backbuffer stays at the logical game size; the browser scales the canvas bitmap to fill the CSS size. Preserves pixel-art aesthetics and avoids extra fragment processing during scale-up. |

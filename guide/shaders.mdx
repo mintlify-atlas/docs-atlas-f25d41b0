@@ -1,0 +1,155 @@
+---
+title: "Custom GLSL Shaders in Rapid.js"
+sidebarTitle: "Shaders"
+description: "Inject custom GLSL vertex and fragment code into Rapid.js sprite and graphic pipelines. Set uniforms, chain filter passes, and control shader padding."
+---
+
+`CustomGlShader` lets you inject GLSL code into the engine's built-in sprite or graphic rendering pipeline without replacing the entire shader program. Rather than writing a standalone shader from scratch, you provide small hook functions that are spliced into the base shader at well-defined injection points. Rapid compiles the combined source once per region and caches the result.
+
+## Creating a CustomGlShader
+
+```typescript
+import { Rapid, CustomGlShader } from "rapid-render";
+
+const glowShader = new CustomGlShader(
+  rapid,
+  // Vertex hook — receives the final vertex position and UV region
+  `void vertex(vec2 position, vec4 vRegion) {}`,
+  // Fragment hook — receives and can modify the sampled fragment color
+  `void fragment(inout vec4 fragColor) {
+    float glow = fragColor.a * 0.5;
+    fragColor.rgb += vec3(glow);
+  }`,
+);
+```
+
+The constructor signature is:
+
+```typescript
+new CustomGlShader(
+  rapid: Rapid,
+  vs: string,             // Vertex hook GLSL
+  fs: string,             // Fragment hook GLSL
+  usedTextureUnitNum = 0, // Extra texture units reserved (see below)
+  uniforms?: Record<string, UniformValue>
+)
+```
+
+<Note>
+The `vertex` and `fragment` function signatures must match exactly. The vertex hook receives `vec2 position` (the transformed vertex position) and `vec4 vRegion` (the UV region bounds). The fragment hook receives `inout vec4 fragColor` (the sampled and tinted color). If you do not need to modify a stage, pass an empty body: `void vertex(vec2 position, vec4 vRegion) {}`.
+</Note>
+
+## Using a Shader on a Draw Call
+
+Pass any `CustomGlShader` to the `shader` property of a draw options object:
+
+```typescript
+rapid.drawSprite({ texture, shader: glowShader });
+rapid.drawRect({ x: 0, y: 0, width: 100, height: 100, shader: glowShader });
+```
+
+Rapid detects the shader change, flushes any pending draw calls using the previous shader, and enters the region with the new compiled program.
+
+## Setting Uniforms
+
+Use `setUniforms` to pass data from JavaScript into your GLSL code:
+
+```typescript
+glowShader.setUniforms({
+  uTime:      performance.now() / 1000,
+  uColor:     [1.0, 0.5, 0.0, 1.0],
+  uIntensity: 2.5,
+});
+```
+
+`UniformValue` covers all standard GLSL types:
+
+| JavaScript value | GLSL type inferred |
+|---|---|
+| `number` | `float`, `int`, `bool`, `sampler2D` |
+| `[n, n]` | `vec2` / `ivec2` |
+| `[n, n, n]` | `vec3` / `ivec3` |
+| `[n, n, n, n]` | `vec4` / `ivec4` |
+| `Float32Array` (4 elements) | `vec4` |
+| `Float32Array` (9 elements) | `mat3` |
+| `Float32Array` (16 elements) | `mat4` |
+
+Rapid parses your GLSL source to determine the correct `gl.uniform*` call automatically, so you do not need to specify types manually.
+
+<Tip>
+`setUniforms` calls `rapid.flush()` internally before updating values, ensuring that any draw calls already queued with the old uniform values are dispatched first. You can safely call `setUniforms` mid-frame without worrying about partial-batch corruption.
+</Tip>
+
+## Shader Padding
+
+Some effects — outlines, glow, drop shadows — bleed beyond the original sprite boundaries. `setPadding` expands the rendered quad by the specified number of pixels on each side, giving the fragment shader space to work with:
+
+```typescript
+outlineShader.setPadding(4); // 4 pixels of expansion on every side
+```
+
+`setPadding` returns `this` for chaining and propagates the value to all already-compiled `GLShader` instances. When used inside `applyFilters`, the padding is automatically reflected in the filter render-texture size and output alignment.
+
+## Filter Chains with applyFilters
+
+You can compose multiple shaders into a sequential post-process pipeline using `rapid.applyFilters`. Each shader in the array receives the output of the previous pass as its input texture:
+
+```typescript
+const blurShader = new CustomGlShader(rapid,
+  `void vertex(vec2 p, vec4 r) {}`,
+  `uniform float uRadius;
+   void fragment(inout vec4 color) {
+     // box blur sampling logic using sampleTextureLocal()
+   }`
+);
+blurShader.setUniforms({ uRadius: 3.0 });
+
+const outlineShader = new CustomGlShader(rapid,
+  `void vertex(vec2 p, vec4 r) {}`,
+  `uniform vec4 uOutlineColor;
+   void fragment(inout vec4 color) {
+     // outline detection logic
+   }`
+);
+outlineShader.setUniforms({ uOutlineColor: [0.0, 0.0, 0.0, 1.0] });
+
+const result = rapid.applyFilters(sourceTexture, [blurShader, outlineShader]);
+rapid.drawSprite({ texture: result });
+```
+
+The array must contain at least one shader. Rapid reuses an internal pair of ping-pong `RenderTexture` objects so no new GPU resources are allocated on repeated calls.
+
+## Sampling Helpers Available in the Fragment Hook
+
+The built-in fragment shader exposes several helpers your `fragment` function can call:
+
+| Function | Description |
+|---|---|
+| `sampleTexture(vec2 uv)` | Sample at a global UV coordinate. |
+| `sampleClampTexture(vec2 uv)` | Sample at a global UV, returning transparent black outside the sprite region. |
+| `sampleTextureLocal(vec2 uv)` | Sample using 0–1 local UV coordinates relative to the sprite region. Returns transparent black outside bounds. |
+
+These helpers handle multi-texture batching and UV region boundaries internally, so you can write UV logic in local sprite space without worrying about texture atlases.
+
+## Extra Texture Units
+
+When your shader samples additional textures beyond the sprite — for example a lookup table, a noise texture, or a mask — declare how many extra units it reserves with the fourth constructor argument:
+
+```typescript
+const compositeShader = new CustomGlShader(
+  rapid,
+  `void vertex(vec2 p, vec4 r) {}`,
+  `uniform sampler2D uMaskTex;
+   void fragment(inout vec4 color) {
+     vec4 mask = texture(uMaskTex, vRegion);
+     color.a  *= mask.r;
+   }`,
+  1, // reserves 1 extra texture unit beyond the sprite atlas
+);
+
+compositeShader.setUniforms({
+  uMaskTex: maskTexture.glTexture as WebGLTexture,
+});
+```
+
+Rapid uses this count to offset the texture unit assignments correctly so the custom sampler does not collide with the engine's own texture slots.

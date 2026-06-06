@@ -1,0 +1,109 @@
+---
+title: "Offscreen Rendering with RenderTexture in Rapid.js"
+sidebarTitle: "Render Textures"
+description: "Render to offscreen WebGL framebuffers, read pixel data, and use the result as a texture in subsequent draw calls for dynamic effects and compositing."
+---
+
+A `RenderTexture` wraps a WebGL framebuffer and renderbuffer, letting you redirect draw calls to an offscreen surface and then use that surface as an ordinary texture in subsequent draw calls. This is the foundation for post-processing effects, dynamic compositing, shadow maps, and any technique that needs to capture intermediate rendering results.
+
+## Creating a RenderTexture
+
+Use `rapid.texture.createRenderTexture` and supply at minimum a width and height:
+
+```typescript
+const rt = rapid.texture.createRenderTexture({ width: 512, height: 512 });
+```
+
+### IRenderTextureOptions
+
+| Option | Type | Description |
+|---|---|---|
+| `width` | `number` | Width of the render texture in pixels (required). |
+| `height` | `number` | Height of the render texture in pixels (required). |
+| `clearColor` | `Color` | Default clear color. Defaults to `Color.Black`. |
+| `textureFilter` | `TextureFilterMode` | Sampling filter (`LINEAR` or `NEAREST`). |
+| `wrap` | `TextureWrapMode` | Texture wrap mode (`REPEAT`, `CLAMP`, or `MIRRORED_REPEAT`). |
+| `premultipliedAlpha` | `boolean` | Whether texture data uses premultiplied alpha. |
+
+## Rendering Into a RenderTexture
+
+### Convenience Wrapper (Recommended)
+
+`drawToRenderTexture` handles entering, optionally clearing, and leaving the render target in a single call. The third argument controls the clear color — pass `null` to skip clearing and composite on top of existing content.
+
+```typescript
+rapid.drawToRenderTexture(rt, () => {
+  rapid.drawSprite({ texture: heroTexture, x: 0, y: 0 });
+  rapid.drawRect({ x: 50, y: 50, width: 100, height: 100, color: Color.Red });
+});
+```
+
+### Manual Enter / Leave
+
+When you need finer control — for example to interleave multiple render targets — use the lower-level API:
+
+```typescript
+rapid.enterRenderTexture(rt);
+rapid.clearRenderTexture();           // clears to transparent black by default
+rapid.drawSprite({ texture: myTex });
+rapid.leaveRenderTexture();           // restores the main canvas framebuffer
+```
+
+`enterRenderTexture` flushes any pending draw calls, activates the framebuffer, and resets the viewport and projection matrix to fit the render texture. `leaveRenderTexture` reverses all of that, restoring the main canvas state.
+
+<Note>
+`clearRenderTexture` accepts an optional `Color` argument. If you omit it, it clears to transparent black `(0, 0, 0, 0)`. Pass `null` to `drawToRenderTexture`'s third argument to skip clearing entirely and keep existing content.
+</Note>
+
+## Using the Result as a Texture
+
+Once rendering is complete, a `RenderTexture` can be passed anywhere a regular `Texture` is accepted:
+
+```typescript
+rapid.drawSprite({ texture: rt, x: 0, y: 0 });
+```
+
+Rapid automatically accounts for the WebGL convention that framebuffer content is stored upside-down by setting `flipY = true` on every `RenderTexture`. This means the image will appear the correct way up when drawn with `drawSprite` — no manual flipping required.
+
+## Reading Pixel Data
+
+`RenderTexture` exposes two methods for reading back pixel data from the GPU:
+
+```typescript
+// Returns a Uint8Array of raw RGBA values for the specified region
+const pixels = rt.GetPixels(0, 0, rt.rawWidth, rt.rawHeight);
+
+// Returns a Color object for a single pixel at (x, y)
+const color = rt.GetColorAt(100, 200);
+```
+
+Both methods use logical pixel coordinates with a top-left origin, matching your drawing coordinate system.
+
+<Warning>
+`GetPixels` and `GetColorAt` trigger a GPU→CPU synchronisation stall (`gl.readPixels`). Calling either method every frame on a large render texture will cause a significant performance drop. Prefer reading pixels only when necessary — for example, once after a loading screen renders — or use compute-friendly alternatives like transform feedback for data that must be processed every frame.
+</Warning>
+
+## Resizing a RenderTexture
+
+Call `resize` to adjust the logical dimensions of an existing render texture:
+
+```typescript
+rt.resize(1024, 768);
+```
+
+Rapid uses a **grow-only** GPU allocation strategy: the underlying WebGL texture and renderbuffer are only reallocated when the new size exceeds the previous maximum. Shrinking only updates the logical dimensions and UV sub-region, with no GPU work. This makes it safe to call `resize` frequently or inside filter loops without causing excessive allocations.
+
+## Post-Processing with applyFilters
+
+`applyFilters` chains an array of `CustomGlShader` passes over a source texture using an internal ping-pong pair of `RenderTexture` objects. Each pass receives the output of the previous one as its input, and the final result is returned as a `RenderTexture` ready to draw.
+
+```typescript
+const result = rapid.applyFilters(spriteTexture, [blurShader, outlineShader]);
+rapid.drawSprite({ texture: result });
+```
+
+The internal ping-pong render textures are reused across frames and grown only when the source size increases, so `applyFilters` is efficient to call every frame for real-time effects.
+
+<Tip>
+If a shader uses `setPadding`, `applyFilters` automatically expands the render texture dimensions to accommodate the bleed area and offsets the output so it aligns with the original sprite bounds. See [Custom Shaders](/guide/shaders) for details on padding.
+</Tip>

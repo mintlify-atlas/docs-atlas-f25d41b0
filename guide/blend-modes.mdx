@@ -1,0 +1,104 @@
+---
+title: "Blend Modes for Visual Effects in Rapid.js"
+sidebarTitle: "Blend Modes"
+description: "Apply additive, multiply, screen, and erase blend modes for glow, shadow, and compositing effects. Use withBlendMode for automatic state restoration."
+---
+
+Blend modes control how each pixel you draw combines with pixels already in the framebuffer. By changing the WebGL blend equation you can create additive glow, darkening shadows, soft light, and alpha-erasure effects without any special shader code.
+
+## Available Blend Modes
+
+The `BlendMode` enum provides five modes:
+
+| Enum value | Effect | Typical use case |
+|---|---|---|
+| `BlendMode.NORMAL` | Standard alpha blending (default) | General-purpose sprite rendering |
+| `BlendMode.ADD` | Adds source RGB to destination RGB | Glow, fire, laser beams, magic effects |
+| `BlendMode.MULTIPLY` | Multiplies source RGB with destination | Shadows, darkening overlays, tinted glass |
+| `BlendMode.SCREEN` | Inverse multiply — lightens without over-saturating | Fog, volumetric light, soft halos |
+| `BlendMode.ERASE` | Subtracts source alpha from destination alpha | Cutting transparent holes into render textures |
+
+## withBlendMode (Recommended)
+
+`withBlendMode` sets the desired mode, executes a callback, then automatically restores `BlendMode.NORMAL` — even if the callback throws. This is the safest way to use blend modes because you cannot accidentally leave the renderer in a non-standard state.
+
+```typescript
+rapid.withBlendMode(BlendMode.ADD, () => {
+  rapid.drawSprite({ texture: glowTexture, x: 400, y: 300 });
+  rapid.drawSprite({ texture: sparkTexture, x: 420, y: 280 });
+});
+```
+
+## Manual setBlendMode
+
+When you need to span blend modes across multiple code paths, use `setBlendMode` directly and restore the mode manually when done:
+
+```typescript
+rapid.setBlendMode(BlendMode.MULTIPLY);
+rapid.drawSprite({ texture: shadowTexture, x: 200, y: 150 });
+rapid.drawRect({ x: 0, y: 0, width: 800, height: 600, color: new Color(0, 0, 0, 80) });
+rapid.setBlendMode(BlendMode.NORMAL); // always restore when finished
+```
+
+<Note>
+`setBlendMode` calls `rapid.flush()` internally before changing the WebGL blend function. This ensures that any draw calls already batched under the previous mode are dispatched before the new mode takes effect. There is never a risk of mixing modes within a single draw batch.
+</Note>
+
+## Practical Examples
+
+### Additive Glow (BlendMode.ADD)
+
+Additive blending accumulates light: drawing the same sprite multiple times makes it brighter, and dark areas of the sprite texture become transparent. Ideal for particles, explosions, and neon effects.
+
+```typescript
+rapid.withBlendMode(BlendMode.ADD, () => {
+  for (const spark of sparks) {
+    rapid.drawSprite({ texture: glowParticle, x: spark.x, y: spark.y, alpha: spark.life });
+  }
+});
+```
+
+### Shadow Overlay (BlendMode.MULTIPLY)
+
+Multiply blending darkens the scene: pure white in the source has no effect, pure black makes the destination black, and mid-tones tint the existing pixels. Good for coloured shadows and tinted lens overlays.
+
+```typescript
+rapid.withBlendMode(BlendMode.MULTIPLY, () => {
+  rapid.drawSprite({ texture: shadowBlob, x: characterX + 10, y: characterY + 60 });
+});
+```
+
+### Soft Light Bloom (BlendMode.SCREEN)
+
+Screen blending brightens without the hard clipping of additive blending. It can never exceed white, so it produces a more natural glow suitable for atmospheric fog or bloom passes.
+
+```typescript
+rapid.withBlendMode(BlendMode.SCREEN, () => {
+  rapid.drawSprite({ texture: bloomLayer, x: 0, y: 0 });
+});
+```
+
+### Erasing into a RenderTexture (BlendMode.ERASE)
+
+`ERASE` subtracts the source alpha from the destination alpha. This is only meaningful when rendering into a `RenderTexture` (offscreen framebuffer) because the main canvas composites onto the browser page. Use it to punch transparent holes into a pre-rendered texture — for example, a spotlight mask or a fog-of-war reveal.
+
+```typescript
+// First render the fog layer to an offscreen texture
+rapid.drawToRenderTexture(fogRT, () => {
+  rapid.drawRect({ x: 0, y: 0, width: 800, height: 600, color: new Color(0, 0, 0, 200) });
+});
+
+// Then erase a circle around the player to reveal the scene beneath
+rapid.drawToRenderTexture(fogRT, () => {
+  rapid.withBlendMode(BlendMode.ERASE, () => {
+    rapid.drawCircle({ x: playerX, y: playerY, radius: 120, color: Color.White });
+  });
+}, null); // pass null to skip clearing — preserve existing fog
+
+// Finally draw the fog texture over the scene
+rapid.drawSprite({ texture: fogRT, x: 0, y: 0 });
+```
+
+<Tip>
+The `ERASE` blend mode uses `gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA)`, meaning the destination RGB is also multiplied by `(1 - srcAlpha)`. For a pure alpha-erasure effect, use white as the erase color (`Color.White`) so the RGB multiplication has no additional visual impact.
+</Tip>

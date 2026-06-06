@@ -1,0 +1,322 @@
+---
+title: "Color Class — RGBA Color Values for Rapid.js"
+sidebarTitle: "Color"
+description: "API reference for the Color class: RGBA components, factory methods from hex/HSL/normalized, arithmetic operations, and premultiplied alpha support."
+---
+
+`Color` represents an RGBA color with each component in the 0–255 range. Every time a component changes, the class automatically recomputes both a straight ABGR packed `uint32` and a premultiplied-alpha ABGR packed `uint32`, so values are always ready for efficient GPU upload without extra conversion at draw time.
+
+## Constructor
+
+```typescript
+new Color(r: number, g: number, b: number, a?: number)
+```
+
+<ParamField path="r" type="number" required>
+  Red component, 0–255.
+</ParamField>
+
+<ParamField path="g" type="number" required>
+  Green component, 0–255.
+</ParamField>
+
+<ParamField path="b" type="number" required>
+  Blue component, 0–255.
+</ParamField>
+
+<ParamField path="a" type="number">
+  Alpha component, 0–255. Defaults to `255` (fully opaque).
+</ParamField>
+
+```typescript
+const coral = new Color(255, 127, 80);
+const semiTransparent = new Color(0, 128, 255, 128);
+```
+
+## Static Factory Methods
+
+### `Color.fromHex(hex)`
+
+Parse a CSS hex string into a `Color`. Supports both 6-character (`#RRGGBB`, fully opaque) and 8-character (`#RRGGBBAA`) forms. The leading `#` is optional.
+
+```typescript
+static fromHex(hexString: string): Color
+```
+
+```typescript
+const crimson = Color.fromHex("#dc143c");
+const ghost   = Color.fromHex("#ffffff40"); // 25% opaque white
+```
+
+---
+
+### `Color.fromNorm(r, g, b, a?)`
+
+Create a `Color` from shader-style normalized floats in the 0.0–1.0 range. Each component is multiplied by 255 and rounded.
+
+```typescript
+static fromNorm(r: number, g: number, b: number, a?: number): Color
+```
+
+```typescript
+const gold = Color.fromNorm(1.0, 0.84, 0.0);       // fully opaque gold
+const mist = Color.fromNorm(0.9, 0.9, 1.0, 0.4);   // translucent blue-white
+```
+
+---
+
+### `Color.FromRGB(r, g, b)`
+
+Alias for `new Color(r, g, b)`. Creates a fully opaque color from 0–255 components.
+
+```typescript
+static FromRGB(r: number, g: number, b: number): Color
+```
+
+```typescript
+const teal = Color.FromRGB(0, 128, 128);
+```
+
+---
+
+### `Color.FromHSL(h, s, l)`
+
+Create a `Color` from HSL values. Hue is 0–360 degrees; saturation and lightness are 0–100 percent. Alpha is always 255.
+
+```typescript
+static FromHSL(h: number, s: number, l: number): Color
+```
+
+```typescript
+const lime  = Color.FromHSL(90, 100, 50);   // pure lime green
+const steel = Color.FromHSL(207, 44, 49);   // steel blue
+```
+
+## Properties
+
+### Component Getters and Setters
+
+Each component is exposed as a get/set pair. Writing a new value automatically triggers an update to `uint32` and `premultipliedUint32`.
+
+| Property | Type | Description |
+|---|---|---|
+| `r` | `number` | Red component (0–255). |
+| `g` | `number` | Green component (0–255). |
+| `b` | `number` | Blue component (0–255). |
+| `a` | `number` | Alpha component (0–255). |
+
+```typescript
+const c = new Color(0, 0, 0);
+c.r = 255; // triggers uint32 update automatically
+```
+
+---
+
+### `uint32`
+
+A packed unsigned 32-bit integer in ABGR byte order representing the straight (non-premultiplied) color. Recomputed whenever any component changes. Used for fast vertex buffer writes.
+
+```typescript
+uint32: number
+```
+
+---
+
+### `premultipliedUint32`
+
+A packed unsigned 32-bit integer in ABGR byte order with RGB channels pre-multiplied by the alpha value. Used for correct alpha-blending in GPU pipelines that expect premultiplied input.
+
+```typescript
+premultipliedUint32: number
+```
+
+## Methods
+
+### `setRGBA(r, g, b, a)`
+
+Set all four components at once. Triggers a single `uint32` recomputation rather than four individual ones.
+
+```typescript
+setRGBA(r: number, g: number, b: number, a: number): void
+```
+
+```typescript
+color.setRGBA(255, 200, 0, 200);
+```
+
+---
+
+### `setHSL(h, s, l)`
+
+Update the color in-place from HSL values (h: 0–360, s/l: 0–100). Sets alpha to 255. Returns `this` for chaining.
+
+```typescript
+setHSL(h: number, s: number, l: number): Color
+```
+
+```typescript
+color.setHSL(120, 80, 60); // in-place update to green
+```
+
+---
+
+### `toHex()`
+
+Return an 8-character hex string in `#RRGGBBAA` format, always including alpha.
+
+```typescript
+toHex(): string
+```
+
+```typescript
+new Color(255, 0, 0).toHex(); // "#ff0000ff"
+```
+
+---
+
+### `toHexString(includeAlpha?)`
+
+Return a hex string. When `includeAlpha` is `true` (default) the result is `#RRGGBBAA`; when `false` it is `#RRGGBB`.
+
+```typescript
+toHexString(includeAlpha?: boolean): string
+```
+
+```typescript
+new Color(0, 128, 255, 64).toHexString();        // "#0080ff40"
+new Color(0, 128, 255, 64).toHexString(false);   // "#0080ff"
+```
+
+---
+
+### `equal(color)` / `equals(color)`
+
+Return `true` if all four RGBA components of `color` match this instance. `equals` is an alias for `equal`.
+
+```typescript
+equal(color: Color): boolean
+equals(color: Color): boolean
+```
+
+---
+
+### `copy(color)`
+
+Copy all RGBA values from `color` into this instance, updating the uint32 cache.
+
+```typescript
+copy(color: Color): void
+```
+
+---
+
+### `clone()`
+
+Return a new `Color` with the same RGBA values.
+
+```typescript
+clone(): Color
+```
+
+---
+
+### `add(color)`
+
+Return a new `Color` whose components are the sum of this color and `color`, clamped to 255.
+
+```typescript
+add(color: Color): Color
+```
+
+```typescript
+const bright = base.add(highlight); // each channel capped at 255
+```
+
+---
+
+### `subtract(color)`
+
+Return a new `Color` whose components are the difference, clamped to 0.
+
+```typescript
+subtract(color: Color): Color
+```
+
+---
+
+### `multiply(color | number)`
+
+Return a new `Color` with components multiplied component-wise by another `Color`, or scaled uniformly by a scalar. Does **not** clamp automatically — call `clamp()` on the result if needed.
+
+```typescript
+multiply(color: Color | number): Color
+```
+
+```typescript
+const dimmed = base.multiply(0.5);              // half brightness
+const tinted = base.multiply(new Color(255, 128, 0)); // orange tint
+```
+
+---
+
+### `divide(color | number)`
+
+Return a new `Color` with components divided component-wise by another `Color` or a scalar.
+
+```typescript
+divide(color: Color | number): Color
+```
+
+---
+
+### `clamp()`
+
+Clamp all four components to the valid 0–255 range in-place. Useful after a series of arithmetic operations.
+
+```typescript
+clamp(): void
+```
+
+## Named Static Colors
+
+Rapid.js ships predefined `Color` constants for common colors. Each is a `static` property on the `Color` class.
+
+| Constant | RGB |
+|---|---|
+| `Color.Red` | `(255, 0, 0)` |
+| `Color.Green` | `(0, 255, 0)` |
+| `Color.Blue` | `(0, 0, 255)` |
+| `Color.Yellow` | `(255, 255, 0)` |
+| `Color.Purple` | `(128, 0, 128)` |
+| `Color.Orange` | `(255, 165, 0)` |
+| `Color.Pink` | `(255, 192, 203)` |
+| `Color.Gray` | `(128, 128, 128)` |
+| `Color.Brown` | `(139, 69, 19)` |
+| `Color.Cyan` | `(0, 255, 255)` |
+| `Color.Magenta` | `(255, 0, 255)` |
+| `Color.Lime` | `(192, 255, 0)` |
+| `Color.White` | `(255, 255, 255)` |
+| `Color.Black` | `(0, 0, 0)` |
+| `Color.Transparent` | `(0, 0, 0, 0)` |
+
+## Code Examples
+
+```typescript
+// Factory methods
+const red   = Color.fromHex("#ff0000");
+const gold  = Color.fromNorm(1.0, 0.84, 0.0);
+const teal  = Color.FromHSL(180, 100, 50);
+
+// Arithmetic
+const blended = red.add(gold);        // component-wise add, clamped to 255
+const dimmed  = Color.Blue.multiply(0.5); // half-brightness blue
+
+// In-place HSL update
+const dynamic = new Color(0, 0, 0);
+dynamic.setHSL(frameCount % 360, 100, 50); // cycle through hues each frame
+
+// Serialise / deserialise
+const hex = teal.toHex();                   // "#00ffffff"
+const restored = Color.fromHex(hex);
+console.log(restored.equals(teal));         // true
+```

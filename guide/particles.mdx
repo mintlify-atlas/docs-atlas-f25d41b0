@@ -1,0 +1,196 @@
+---
+title: "Particle Systems with ParticleEmitter in Rapid.js"
+sidebarTitle: "Particles"
+description: "Animate thousands of particles with per-attribute start/end ranges, damping, velocity, acceleration, and emit shapes using the Rapid.js ParticleEmitter."
+---
+
+`ParticleEmitter` manages a pool of `Particle` objects, each carrying animated attributes — speed, rotation, scale, color, velocity, and acceleration — that interpolate over the particle's lifetime. Attributes can be fixed values, random ranges, or independently damped, giving you fine-grained control over visual effects from simple sparks to complex weather systems.
+
+## Basic Emitter Setup
+
+```typescript
+import { ParticleEmitter, ParticleShape, Color, Vec2 } from "rapid-render";
+
+const emitter = new ParticleEmitter(rapid, {
+  texture: sparkTexture,
+  life: [0.5, 1.5],           // lifetime range in seconds
+  emitRate: 30,               // particles per second (continuous mode)
+  animation: {
+    speed: { start: 80, end: 20 },
+    scale: { start: 1.0, end: 0.0 },
+    color: {
+      start: new Color(255, 200, 50, 255),
+      end:   new Color(255, 50,  0,  0),
+    },
+    rotation: { start: 0, end: Math.PI * 4 },
+  },
+});
+
+emitter.start();
+```
+
+## Game Loop Integration
+
+Call `update` and `render` once per frame inside your game loop. `update` advances particle lifetimes and spawns new particles; `render` draws all currently alive particles.
+
+```typescript
+function loop(dt: number) {
+  rapid.clear();
+  emitter.update(dt);   // dt is delta time in seconds
+  emitter.render();
+  rapid.flush();
+}
+```
+
+## IParticleOptions Reference
+
+| Option | Type | Description |
+|---|---|---|
+| `texture` | `Texture \| Texture[] \| [Texture, number][]` | Texture or texture pool to pick from. Pass weighted tuples for weighted random selection. |
+| `life` | `number \| [min, max]` | Particle lifetime in seconds, or a min/max range. |
+| `animation` | `IParticleAnimation` | Per-attribute animation configuration (see below). |
+| `emitShape` | `ParticleShape` | `POINT` (default), `CIRCLE`, or `RECT`. |
+| `emitRadius` | `number` | Spawn radius when `emitShape` is `CIRCLE`. |
+| `emitRect` | `{ width: number; height: number }` | Spawn area when `emitShape` is `RECT`. |
+| `maxParticles` | `number` | Cap on simultaneous live particles. Unlimited by default. |
+| `emitRate` | `number` | Particles per second (continuous) or per burst interval. |
+| `emitTime` | `number` | Burst interval in seconds. `0` means continuous emission (default). |
+| `localSpace` | `boolean` | Position particles relative to the emitter. Default `true`. |
+| `position` | `Vec2` | World-space position of the emitter. |
+| `origin` | `Vec2` | Pivot point within the particle texture (default `0.5, 0.5` — center). |
+
+## IParticleAnimation Attributes
+
+Each property of `IParticleAnimation` accepts either a plain value (constant throughout lifetime) or a `ParticleAttribute` object that describes how the value changes over time:
+
+| Attribute | Type | Description |
+|---|---|---|
+| `speed` | `ParticleAttribute<number> \| number` | Movement speed along the rotation axis (pixels/sec). |
+| `rotation` | `ParticleAttribute<number> \| number` | Rotation angle in radians. |
+| `scale` | `ParticleAttribute<number> \| number` | Uniform scale multiplier. |
+| `color` | `ParticleAttribute<Color> \| Color` | Tint color (0–255 components). |
+| `velocity` | `ParticleAttribute<Vec2> \| Vec2` | Additive velocity vector (pixels/sec). |
+| `acceleration` | `ParticleAttribute<Vec2> \| Vec2` | Acceleration added to velocity each second (pixels/sec²). |
+
+### ParticleAttribute
+
+```typescript
+interface ParticleAttribute<T> {
+  start?:   T | [T, T];  // starting value or [min, max] random range
+  end?:     T | [T, T];  // ending value or [min, max] range (defaults to start)
+  damping?: number;       // multiplicative factor per second (e.g. 0.9 = 10% decay/sec)
+  delta?:   T;            // explicit per-second override instead of deriving from start/end
+}
+```
+
+When `start` and `end` are both provided, each particle linearly interpolates from `start` to `end` over its lifetime. When `end` is omitted the value stays constant at `start`. The `damping` factor is applied multiplicatively every frame: `value *= damping ^ deltaTime`.
+
+## Emit Shapes
+
+### Point (Default)
+
+All particles spawn at the emitter's origin.
+
+### Circle
+
+Particles are distributed uniformly within a circle of the given radius:
+
+```typescript
+const fireEmitter = new ParticleEmitter(rapid, {
+  texture: sparkTexture,
+  life: 1,
+  emitShape: ParticleShape.CIRCLE,
+  emitRadius: 30,
+  animation: {
+    velocity: new Vec2(0, -50),
+    scale: { start: 1.0, end: 0.0 },
+  },
+});
+```
+
+### Rectangle
+
+Particles are distributed randomly within a rectangular area centered on the emitter:
+
+```typescript
+const snowEmitter = new ParticleEmitter(rapid, {
+  texture: flakeTexture,
+  life: [2, 4],
+  emitShape: ParticleShape.RECT,
+  emitRect: { width: 800, height: 10 },
+  animation: {
+    velocity: new Vec2(0, 40),
+    scale: { start: 0.5, end: 1.5 },
+  },
+});
+```
+
+## Multiple Textures and Weighted Random Selection
+
+Pass an array of textures for uniform random selection, or an array of `[Texture, weight]` tuples for weighted random selection:
+
+```typescript
+const emitter = new ParticleEmitter(rapid, {
+  texture: [
+    [sparkTexture, 3],  // 3× more likely than starTexture
+    [starTexture,  1],
+  ],
+  life: 1,
+  animation: { scale: { start: 1, end: 0 } },
+});
+```
+
+## Burst Mode
+
+Set `emitTime` to a positive value to switch from continuous emission to periodic bursts. Each burst emits `emitRate` particles at once:
+
+```typescript
+emitter.emitTime = 0.5;  // burst every 0.5 seconds
+emitter.emitRate = 20;   // emit 20 particles per burst
+```
+
+## Manual Emission
+
+Trigger particle spawns programmatically regardless of the emitter's running state:
+
+```typescript
+emitter.oneShot();   // emit emitRate particles immediately (fire-and-forget)
+emitter.emit(50);    // emit exactly 50 particles immediately
+```
+
+`oneShot` is a shorthand for `emit(emitRate)` and is useful for triggered effects like explosions or impacts.
+
+## Emitter Lifecycle
+
+| Method | Description |
+|---|---|
+| `start()` | Begins continuous emission. Resets the burst timer. |
+| `stop()` | Stops spawning new particles. Existing particles finish their lifecycle. |
+| `clear()` | Removes all live particles immediately and resets timers. |
+| `clone()` | Creates a new emitter with the same options but no copied particle state. |
+
+## Querying the Emitter
+
+```typescript
+emitter.getParticleCount(); // current number of live particles
+emitter.isActive();         // true if emitting OR if live particles remain
+```
+
+## Local Space and World-Space Position
+
+By default, particles are positioned relative to the emitter. Update `position` each frame to move the emitter through the world:
+
+```typescript
+emitter.position = new Vec2(playerX, playerY);
+```
+
+To spawn particles at their absolute world-space coordinates at the moment of spawning (so they do not follow the emitter after birth), disable `localSpace`:
+
+```typescript
+emitter.localSpace = false;
+emitter.position   = new Vec2(playerX, playerY); // used as spawn offset
+```
+
+<Tip>
+In `localSpace = true` mode (default), the emitter applies its position as a matrix transform around the whole particle batch at render time. In `localSpace = false` mode, each particle bakes the emitter position into its spawn coordinates and is then rendered without any emitter transform.
+</Tip>

@@ -1,0 +1,236 @@
+---
+title: "Transforms and the Matrix Stack in Rapid.js"
+sidebarTitle: "Transforms"
+description: "Apply position, rotation, scale, and origin to any draw call. Use the hierarchical MatrixStack for cameras, groups, and parent-child transform chains."
+---
+
+Every draw call in Rapid.js accepts an `ITransformOptions` object that describes position, rotation, scale, and pivot point. For simple cases you can pass these fields directly on the draw call options. For hierarchical scenes — cameras, grouped objects, skeleton animations — you work with `rapid.matrixStack` directly, pushing and popping transform state just like a 2D canvas context.
+
+---
+
+## Inline Transforms on Draw Calls
+
+The simplest way to transform a sprite is to pass transform fields directly to `drawSprite` (or any other draw function). The engine resolves the full world matrix before submitting the vertices.
+
+```typescript
+rapid.drawSprite({
+  texture,
+  x: 200,
+  y: 150,
+  rotation: Math.PI / 4,   // 45 degrees, in radians
+  scale: 2,                  // uniform scale
+  origin: 0.5,               // pivot at center (normalized 0–1)
+});
+```
+
+### ITransformOptions Reference
+
+<ParamField path="x" type="number">
+  Horizontal translation in logical pixels. Applied before rotation and scale.
+</ParamField>
+
+<ParamField path="y" type="number">
+  Vertical translation in logical pixels. Applied before rotation and scale.
+</ParamField>
+
+<ParamField path="position" type="Vec2">
+  Position as a `Vec2`. Additive with `x` / `y` when both are provided.
+</ParamField>
+
+<ParamField path="rotation" type="number">
+  Rotation angle in **radians**. Positive values rotate clockwise in screen space (Y-down).
+</ParamField>
+
+<ParamField path="scale" type="number | Vec2">
+  Uniform scale as a `number`, or per-axis scale as a `Vec2`. A value of `2` doubles the size; `0.5` halves it.
+</ParamField>
+
+<ParamField path="offsetX" type="number">
+  Local X offset applied **after** rotation and scale. Useful for nudging a sprite relative to its already-transformed origin without affecting the pivot.
+</ParamField>
+
+<ParamField path="offsetY" type="number">
+  Local Y offset applied after rotation and scale.
+</ParamField>
+
+<ParamField path="offset" type="Vec2">
+  Local offset as a `Vec2`. Additive with `offsetX` / `offsetY`.
+</ParamField>
+
+<ParamField path="origin" type="number | Vec2">
+  Normalized pivot point used for rotation and scaling. `0` is the top-left corner; `0.5` is the center; `1` is the bottom-right. Pass a `Vec2` for independent X/Y pivots. The engine multiplies this value against the sprite's `width` and `height` and subtracts it from the local offset, so the sprite rotates around that point.
+</ParamField>
+
+<ParamField path="saveTransform" type="boolean" default="true">
+  When `true` (the default), `applyTransform` pushes a new level onto the matrix stack before applying the transform, and the caller is responsible for calling `matrixStack.restore()`. Set to `false` to mutate the current matrix level in place — useful for deferred / retained-mode patterns where you want to update a matrix slot without changing stack depth.
+</ParamField>
+
+<ParamField path="afterSave" type="() => void">
+  An optional callback invoked immediately after the matrix stack save (if `saveTransform` is `true`). Use it to read the just-saved matrix index for later use with `updateMatrix`.
+</ParamField>
+
+---
+
+## MatrixStack: Manual Save and Restore
+
+For any case where you need to apply a shared transform to a group of draw calls, use `rapid.matrixStack` directly. The API mirrors the HTML Canvas 2D context.
+
+```typescript
+rapid.matrixStack.save();
+rapid.matrixStack.translate(100, 100);  // move origin
+rapid.matrixStack.rotate(Math.PI / 6); // 30 degrees
+rapid.matrixStack.scale(1.5);           // uniform scale
+
+// Every draw call here is affected by the accumulated transform.
+rapid.drawSprite({ texture: bodyTex });
+rapid.drawSprite({ texture: shadowTex, offsetY: 40 });
+
+rapid.matrixStack.restore(); // pop back to the state before save()
+```
+
+The stack operations are:
+
+| Method | Description |
+|---|---|
+| `save()` | Pushes a copy of the current world matrix onto the stack. |
+| `restore()` | Pops the stack, reverting to the matrix state at the last `save()`. |
+| `translate(x, y)` | Translates the current matrix by `(x, y)`. |
+| `rotate(radians)` | Rotates the current matrix by the given angle. |
+| `scale(scaleX, scaleY?)` | Scales the current matrix. `scaleY` defaults to `scaleX` when omitted. |
+| `identity()` | Resets the current matrix to the identity transform. |
+
+<Note>
+  `rapid.clear()` calls `matrixStack.reset()` internally, which discards the entire stack and resets to identity. Never rely on matrix state surviving across frames.
+</Note>
+
+---
+
+## `withTransform` Convenience Wrapper
+
+`rapid.withTransform()` is a helper that saves the matrix stack, optionally applies a full `ITransformOptions` transform (including `origin` resolution), calls your callback, and then restores — all with a guaranteed `finally` block so the stack is never left in a corrupt state even if the callback throws.
+
+```typescript
+rapid.withTransform(() => {
+  rapid.drawSprite({ texture });
+}, { x: 300, y: 200, rotation: Math.PI / 4, origin: 0.5 }, texture.width, texture.height);
+```
+
+The third and fourth arguments are the logical `width` and `height` of the object being transformed. These are used to resolve the `origin` anchor into a pixel offset — pass `texture.width` and `texture.height` for sprites.
+
+You can also use it without a transform for a clean save/restore block:
+
+```typescript
+rapid.withTransform(() => {
+  rapid.matrixStack.translate(50, 50);
+  rapid.drawSprite({ texture: childTex });
+});
+```
+
+---
+
+## Camera Pattern with `renderCamera`
+
+`rapid.renderCamera(transform)` applies a transform to the matrix stack and then immediately **inverts** it. The result is that all subsequent world-space draw calls are offset as if the viewport has been moved or rotated — a zero-overhead scrolling camera.
+
+```typescript
+function gameLoop() {
+  rapid.clear();
+
+  // --- World pass (camera affected) ---
+  rapid.matrixStack.save();
+  rapid.renderCamera({ x: -cameraX, y: -cameraY });
+
+  for (const tile of worldTiles) {
+    rapid.drawSprite({ texture: tile.tex, x: tile.x, y: tile.y });
+  }
+  for (const enemy of enemies) {
+    rapid.drawSprite({ texture: enemy.tex, x: enemy.x, y: enemy.y });
+  }
+
+  rapid.matrixStack.restore();
+
+  // --- HUD pass (not affected by camera) ---
+  rapid.drawSprite({ texture: hudTex, x: 8, y: 8 });
+
+  rapid.flush();
+}
+```
+
+<Tip>
+  Negate the camera world position when passing it to `renderCamera`. If the camera is at world position `(300, 200)`, pass `{ x: -300, y: -200 }` so that world objects shift in the opposite direction, making it appear as if the viewport has moved to `(300, 200)`.
+</Tip>
+
+---
+
+## `rotateWithOffset`: Rotating Around a Joint
+
+`matrixStack.rotateWithOffset(radians, offsetX, offsetY)` rotates the current matrix around a pivot point that is offset from the current origin. Internally it translates to the pivot, rotates, and translates back — exactly the pattern needed for skeletal/limb animation.
+
+```typescript
+// Rotate a 64×32 forearm sprite around its left edge (the elbow joint at x=0, y=16).
+rapid.matrixStack.save();
+rapid.matrixStack.translate(elbowX, elbowY);
+rapid.matrixStack.rotateWithOffset(forearmAngle, 0, 16);
+rapid.drawSprite({ texture: forearmTex });
+rapid.matrixStack.restore();
+```
+
+Compare this to passing a manual `translate → rotate → translate-back`:
+
+```typescript
+// Equivalent manual sequence:
+rapid.matrixStack.translate(0, 16);
+rapid.matrixStack.rotate(forearmAngle);
+rapid.matrixStack.translate(0, -16);
+```
+
+`rotateWithOffset` is cleaner and avoids off-by-one errors when composing multiple transforms.
+
+---
+
+## `localToWorld` and `worldToLocal`
+
+The matrix stack exposes two coordinate-space conversion helpers that are essential for hit testing and pointer input.
+
+```typescript
+// Convert a world-space mouse click into the local space of a rotated sprite.
+const localPoint = rapid.matrixStack.worldToLocal(mouseX, mouseY);
+if (localPoint.x >= 0 && localPoint.x <= tex.width &&
+    localPoint.y >= 0 && localPoint.y <= tex.height) {
+  console.log("Sprite clicked!");
+}
+```
+
+```typescript
+// Find the world position of a point that is local to the current transform.
+// Useful for attaching particles to a moving, rotated object.
+const worldPoint = rapid.matrixStack.localToWorld(spriteWidth / 2, 0);
+spawnParticle(worldPoint.x, worldPoint.y);
+```
+
+Both methods operate on the **current world matrix** (`matrixStack.curWorldM`). Call them while the relevant transform is active — i.e. between a `save()` / `restore()` pair that includes the object's transforms.
+
+---
+
+## `updateMatrix`: Deferred / Retained-Mode Transforms
+
+For scene graphs where you want to record a matrix slot during scene traversal and update it later (without re-traversing the full tree), use `updateMatrix`.
+
+`matrixStack.save()` returns an object `{ world, local, step }`. Store the `step` value, then call `matrixStack.updateMatrix(step)` whenever the object's local transform changes. Rapid will recompute the subtree rooted at that node without touching the rest of the frame.
+
+```typescript
+// During scene setup:
+const handle = rapid.matrixStack.save();
+rapid.matrixStack.translate(enemy.x, enemy.y);
+rapid.drawSprite({ texture: enemy.tex });
+rapid.matrixStack.restore();
+
+// Later, when enemy.x / enemy.y changes:
+rapid.matrixStack.identity(); // reset local matrix to the slot
+rapid.matrixStack.translate(enemy.x, enemy.y);
+rapid.matrixStack.updateMatrix(handle.step);
+```
+
+<Warning>
+  `updateMatrix` is an advanced API intended for retained-mode scene graph patterns. In a typical immediate-mode render loop you should simply re-issue all draw calls each frame inside `clear()` / `flush()` — that is usually simpler and fast enough.
+</Warning>

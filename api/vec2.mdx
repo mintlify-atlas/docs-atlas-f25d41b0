@@ -1,0 +1,448 @@
+---
+title: "Vec2 — 2D Vector Math for Rapid.js"
+sidebarTitle: "Vec2"
+description: "API reference for Vec2: 2D vector arithmetic, normalization, dot/cross products, polar coordinates, and static factory methods used throughout Rapid.js."
+---
+
+`Vec2` is a 2D vector class used throughout Rapid.js for positions, velocities, origins, offsets, and directions. Most arithmetic methods — `add`, `subtract`, `multiply`, `divide`, `normalized`, `inverted`, `abs`, `floor`, `ceil`, `clone`, `copy` — return **new `Vec2` instances** and leave the original unchanged. Mutating methods — `set`, `normalize`, `perpendicular`, `invert`, `setToPolar`, `fix`, `clear` — modify the vector in-place and return `this` to support chaining.
+
+## Constructor
+
+```typescript
+new Vec2(x?: number, y?: number)
+```
+
+Both `x` and `y` default to `0` when omitted.
+
+```typescript
+const origin = new Vec2();        // (0, 0)
+const point  = new Vec2(100, 200);
+const square = new Vec2(64);      // only x provided; y defaults to 0
+```
+
+## Static Constants
+
+These are shared singleton instances. Do not mutate them.
+
+| Constant | Value |
+|---|---|
+| `Vec2.ZERO` | `(0, 0)` |
+| `Vec2.ONE` | `(1, 1)` |
+| `Vec2.UP` | `(0, 1)` |
+| `Vec2.DOWN` | `(0, -1)` |
+| `Vec2.LEFT` | `(-1, 0)` |
+| `Vec2.RIGHT` | `(1, 0)` |
+
+## Static Factory Methods
+
+### `Vec2.fromAngle(angle)`
+
+Create a unit vector pointing in the direction given by `angle` in radians. Equivalent to `new Vec2(Math.cos(angle), Math.sin(angle))`.
+
+```typescript
+static fromAngle(angle: number): Vec2
+```
+
+```typescript
+const right = Vec2.fromAngle(0);               // (1, 0)
+const up45  = Vec2.fromAngle(Math.PI / 4);     // (~0.707, ~0.707)
+```
+
+---
+
+### `Vec2.FromArray(array)`
+
+Convert an array of `[x, y]` pairs into an array of `Vec2` instances.
+
+```typescript
+static FromArray(array: number[][]): Vec2[]
+```
+
+```typescript
+const points = Vec2.FromArray([[0, 0], [100, 50], [200, 0]]);
+```
+
+## Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `x` | `number` | Horizontal component. |
+| `y` | `number` | Vertical component. |
+
+## Methods
+
+### `set(x, y?)`
+
+Mutate this vector in-place. If `y` is omitted, both `x` and `y` are set to the value of the first argument. Returns `this`.
+
+```typescript
+set(x: number, y?: number): Vec2
+```
+
+```typescript
+const v = new Vec2(1, 2);
+v.set(5, 10); // (5, 10)
+v.set(3);     // (3, 3)
+```
+
+---
+
+### `add(v)`
+
+Return a new `Vec2` equal to `this + v`.
+
+```typescript
+add(v: Vec2): Vec2
+```
+
+---
+
+### `subtract(v)` / `sub(v)`
+
+Return a new `Vec2` equal to `this - v`. `sub` is a short alias for `subtract`.
+
+```typescript
+subtract(v: Vec2): Vec2
+sub(v: Vec2): Vec2
+```
+
+---
+
+### `multiply(f)`
+
+Return a new `Vec2` with components scaled by a scalar `f`, or multiplied component-wise by another `Vec2`.
+
+```typescript
+multiply(f: number | Vec2): Vec2
+```
+
+```typescript
+const scaled = vel.multiply(0.5);              // halve both components
+const sized  = size.multiply(new Vec2(2, 3));  // non-uniform scale
+```
+
+---
+
+### `mul(f)`
+
+Alias for `multiply`.
+
+```typescript
+mul(f: number | Vec2): Vec2
+```
+
+---
+
+### `divide(f)`
+
+Return a new `Vec2` with components divided by a scalar or component-wise by another `Vec2`.
+
+```typescript
+divide(f: number | Vec2): Vec2
+```
+
+---
+
+### `dot(v)`
+
+Return the scalar dot product of this vector and `v`.
+
+```typescript
+dot(v: Vec2): number
+```
+
+```typescript
+const alignment = dirA.dot(dirB); // 1 = same direction, -1 = opposite, 0 = perpendicular
+```
+
+---
+
+### `cross(v)`
+
+Return the 2D cross product (scalar) of this vector and `v`. Positive when `v` is to the left of `this`.
+
+```typescript
+cross(v: Vec2): number
+```
+
+---
+
+### `length()`
+
+Return the Euclidean length (`√(x² + y²)`).
+
+```typescript
+length(): number
+```
+
+---
+
+### `squaredLength()`
+
+Return the squared length (`x² + y²`). Cheaper than `length()` when only comparisons are needed.
+
+```typescript
+squaredLength(): number
+```
+
+---
+
+### `normalize()`
+
+Mutate this vector so its length is `1`. If the vector is zero-length the components are set to `0`. Returns `this`.
+
+```typescript
+normalize(): this
+```
+
+---
+
+### `normalized()`
+
+Return a new unit vector in the same direction as this vector without mutating the original.
+
+```typescript
+normalized(): Vec2
+```
+
+```typescript
+const dir = velocity.normalized();
+```
+
+---
+
+### `distanceTo(v)`
+
+Return the Euclidean distance between this point and `v`.
+
+```typescript
+distanceTo(v: Vec2): number
+```
+
+---
+
+### `angle()`
+
+Return the angle of this vector in radians using `Math.atan2(y, x)`. The result is in the range `(-π, π]`.
+
+```typescript
+angle(): number
+```
+
+---
+
+### `perpendicular()`
+
+Rotate this vector 90° counter-clockwise in-place (`(-y, x)`). Returns `this`.
+
+```typescript
+perpendicular(): this
+```
+
+---
+
+### `invert()`
+
+Negate both components in-place (`(-x, -y)`). Returns `this`.
+
+```typescript
+invert(): this
+```
+
+---
+
+### `inverted()`
+
+Return a new `Vec2` with both components negated, leaving the original unchanged.
+
+```typescript
+inverted(): Vec2
+```
+
+---
+
+### `abs()`
+
+Return a new `Vec2` with the absolute value of each component.
+
+```typescript
+abs(): Vec2
+```
+
+---
+
+### `floor()`
+
+Return a new `Vec2` with each component floored to the nearest integer.
+
+```typescript
+floor(): Vec2
+```
+
+---
+
+### `ceil()`
+
+Return a new `Vec2` with each component ceiled to the nearest integer.
+
+```typescript
+ceil(): Vec2
+```
+
+---
+
+### `clone()`
+
+Return a new `Vec2` with the same `x` and `y` values.
+
+```typescript
+clone(): Vec2
+```
+
+---
+
+### `copy()`
+
+Return a new `Vec2` with the same `x` and `y` values. Identical to `clone()`.
+
+```typescript
+copy(): Vec2
+```
+
+---
+
+### `to(vec)`
+
+Copy `vec`'s `x` and `y` values into this instance. Mutates in-place.
+
+```typescript
+to(vec: Vec2): void
+```
+
+---
+
+### `equals(v)`
+
+Return `true` if both `x` and `y` are equal to those of `v`.
+
+```typescript
+equals(v: Vec2): boolean
+```
+
+---
+
+### `isZero()`
+
+Return `true` if both `x` and `y` are exactly `0`.
+
+```typescript
+isZero(): boolean
+```
+
+---
+
+### `isNotZero()`
+
+Return `true` if at least one component is non-zero.
+
+```typescript
+isNotZero(): boolean
+```
+
+---
+
+### `isPrettyMuchZero()`
+
+Return `true` if both components have an absolute value below `0.0001`. Useful for floating-point near-zero checks.
+
+```typescript
+isPrettyMuchZero(): boolean
+```
+
+---
+
+### `setToPolar(azimuth, radius?)`
+
+Set this vector to the Cartesian equivalent of polar coordinates: `x = cos(azimuth) * radius`, `y = sin(azimuth) * radius`. `radius` defaults to `1`. Returns `this`.
+
+```typescript
+setToPolar(azimuth: number, radius?: number): this
+```
+
+```typescript
+const v = new Vec2();
+v.setToPolar(Math.PI / 2, 100); // (0, 100) — pointing up with length 100
+```
+
+---
+
+### `fix(limit?)`
+
+Zero out any component whose absolute value is below `limit` (default `1e-13`). Mutates in-place. Useful for eliminating floating-point noise after trigonometric operations.
+
+```typescript
+fix(limit?: number): void
+```
+
+---
+
+### `fixed(limit?)`
+
+Return a new `Vec2` with near-zero components zeroed out, without mutating the original.
+
+```typescript
+fixed(limit?: number): Vec2
+```
+
+---
+
+### `clear()`
+
+Set both `x` and `y` to `0` in-place.
+
+```typescript
+clear(): void
+```
+
+---
+
+### `stringify()`
+
+Return a human-readable string in the form `"Vec2(x, y)"`.
+
+```typescript
+stringify(): string
+```
+
+```typescript
+new Vec2(3, 4).stringify(); // "Vec2(3, 4)"
+```
+
+## Code Examples
+
+```typescript
+// Basic movement
+const pos = new Vec2(100, 200);
+const vel = Vec2.fromAngle(Math.PI / 4).multiply(150); // 150 px/s at 45°
+const moved = pos.add(vel.multiply(dt));
+
+// Unit vector
+const dir = new Vec2(3, 4).normalized();
+console.log(dir.length()); // 1
+
+// Polar coordinates
+const orbit = new Vec2();
+orbit.setToPolar(frameAngle, orbitRadius);
+
+// Distance check
+if (player.pos.distanceTo(enemy.pos) < 50) {
+  // within 50 units
+}
+
+// Angle between two points
+const toTarget = target.subtract(origin);
+const angle = toTarget.angle(); // radians
+
+// Convert array data from JSON / physics engine
+const polygon = Vec2.FromArray([[0,0],[100,0],[50,80]]);
+```

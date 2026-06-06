@@ -1,0 +1,192 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Rapid.js",
+  "projectDescription": "A stateless, data-driven, high-performance WebGL 2D game rendering engine for the browser with instanced sprite rendering, particle systems, and custom shader support.",
+  "theme": "luma",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guide",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "guide/introduction",
+              "guide/installation",
+              "guide/quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "guide/renderer",
+              "guide/textures",
+              "guide/transforms"
+            ]
+          },
+          {
+            "group": "Drawing",
+            "pages": [
+              "guide/sprites",
+              "guide/graphics",
+              "guide/text"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "guide/render-textures",
+              "guide/shaders",
+              "guide/particles",
+              "guide/blend-modes",
+              "guide/masking"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Renderer",
+            "pages": [
+              "api/rapid",
+              "api/matrix-stack"
+            ]
+          },
+          {
+            "group": "Textures",
+            "pages": [
+              "api/texture-manager",
+              "api/texture",
+              "api/render-texture",
+              "api/text-texture"
+            ]
+          },
+          {
+            "group": "Shaders & Primitives",
+            "pages": [
+              "api/gl-shader",
+              "api/custom-gl-shader",
+              "api/color",
+              "api/vec2"
+            ]
+          },
+          {
+            "group": "Particles",
+            "pages": [
+              "api/particle-emitter"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "WebGL2-based instanced sprite rendering for minimal draw calls",
+    "Stateless, data-driven rendering API with no scene graph",
+    "Hierarchical transform matrix stack with save/restore",
+    "Flexible texture system: images, render textures, and text textures",
+    "Custom GLSL shader support via CustomGlShader with padding/filter chains",
+    "Particle emitter with animated attributes (color, speed, scale, velocity)",
+    "Built-in primitives: sprites, rects, circles, lines, and polygons",
+    "Stencil-buffer masking (EQUAL / NOT_EQUAL)",
+    "Offscreen render textures with pixel read-back",
+    "Multiple blend modes: NORMAL, ADD, MULTIPLY, SCREEN, ERASE",
+    "Scissor clipping for rectangular clip regions",
+    "Texture atlas / sprite sheet splitting utilities",
+    "Device-pixel-ratio-aware rendering with CanvasItem and Viewport scale modes"
+  ],
+  "publicApiSurface": [
+    "class Rapid",
+    "Rapid.drawSprite(options: ISpriteOptions)",
+    "Rapid.drawRect(options: IRectOptions)",
+    "Rapid.drawCircle(options: ICircleOptions)",
+    "Rapid.drawLine(options: ILineOptions)",
+    "Rapid.drawGraphic(options: IGraphicOptions)",
+    "Rapid.startGraphic(drawMode, texture?, shader?)",
+    "Rapid.addGraphicVertex(x, y, u, v, color)",
+    "Rapid.addRectVertex(w, h, color?)",
+    "Rapid.addCircleVertex(r, color?, segments?)",
+    "Rapid.endGraphic()",
+    "Rapid.applyFilters(source, shaders[])",
+    "Rapid.drawToRenderTexture(rt, cb, color?)",
+    "Rapid.withMask(maskCb, drawCb, type?, ref?)",
+    "Rapid.withTransform(cb, transform?, width?, height?)",
+    "Rapid.withScissor(x, y, w, h, cb)",
+    "Rapid.withBlendMode(mode, cb)",
+    "Rapid.setBlendMode(mode: BlendMode)",
+    "Rapid.clear()",
+    "Rapid.flush()",
+    "Rapid.resize(logicWidth, logicHeight, cssWidth?, cssHeight?)",
+    "Rapid.renderCamera(transform)",
+    "Rapid.texture: TextureManager",
+    "Rapid.matrixStack: MatrixStack",
+    "class TextureManager",
+    "TextureManager.load(url, options?)",
+    "TextureManager.create(source, options?)",
+    "TextureManager.createRenderTexture(options)",
+    "TextureManager.createTextTexture(options?)",
+    "TextureManager.destroy(textureOrUrl, force?)",
+    "class Texture",
+    "Texture.getSubTexture(x, y, width, height)",
+    "Texture.splitGrid(cellWidth, cellHeight, cols?, rows?)",
+    "Texture.clone()",
+    "class RenderTexture",
+    "RenderTexture.GetPixels(x, y, w, h)",
+    "RenderTexture.GetColorAt(x, y)",
+    "RenderTexture.resize(width, height, force?)",
+    "class TextTexture",
+    "TextTexture.text (getter/setter)",
+    "TextTexture.style (getter/setter)",
+    "class MatrixStack",
+    "MatrixStack.save()",
+    "MatrixStack.restore()",
+    "MatrixStack.translate(x, y)",
+    "MatrixStack.scale(sx, sy)",
+    "MatrixStack.rotate(radians)",
+    "MatrixStack.rotateWithOffset(radians, offsetX, offsetY)",
+    "MatrixStack.applyTransform(transform, width, height)",
+    "MatrixStack.localToWorld(x, y)",
+    "MatrixStack.worldToLocal(x, y)",
+    "class MatrixStore",
+    "class GLShader",
+    "GLShader.setUniform(name, value)",
+    "GLShader.setUniforms(map)",
+    "class CustomGlShader",
+    "CustomGlShader.setUniforms(map)",
+    "CustomGlShader.setPadding(pixels)",
+    "class ParticleEmitter",
+    "ParticleEmitter.start()",
+    "ParticleEmitter.stop()",
+    "ParticleEmitter.emit(count)",
+    "ParticleEmitter.update(deltaTime)",
+    "ParticleEmitter.render()",
+    "ParticleEmitter.oneShot()",
+    "class Color",
+    "Color.fromHex(hex)",
+    "Color.fromNorm(r, g, b, a?)",
+    "Color.FromHSL(h, s, l)",
+    "Color.FromRGB(r, g, b)",
+    "class Vec2",
+    "enum BlendMode",
+    "enum MaskType",
+    "enum TextureFilterMode",
+    "enum TextureWrapMode",
+    "enum CanvasScaleMode",
+    "enum ParticleShape",
+    "interface IAppOptions",
+    "interface ISpriteOptions",
+    "interface IRectOptions",
+    "interface ICircleOptions",
+    "interface ILineOptions",
+    "interface IGraphicOptions",
+    "interface ITransformOptions",
+    "interface ITextStyle",
+    "interface IParticleOptions",
+    "interface IParticleAnimation"
+  ]
+}

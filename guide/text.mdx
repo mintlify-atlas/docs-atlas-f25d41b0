@@ -1,0 +1,243 @@
+---
+title: "Rendering Text with TextTexture in Rapid.js"
+sidebarTitle: "Text"
+description: "Render styled text using TextTexture, which bakes text onto a canvas and uploads it to WebGL. Supports fonts, colors, stroke, multi-line, and live updates."
+---
+
+`TextTexture` is Rapid.js's built-in text renderer. It draws text onto a hidden HTML5 `<canvas>` element using the 2D Canvas API, then uploads the result to a WebGL texture that you display with `drawSprite`. This approach gives you access to the full browser font stack — system fonts, web fonts, variable weights, custom baselines — without any dependency on a bitmap font atlas or signed distance field pre-processing step.
+
+## Creating a TextTexture
+
+Call `rapid.texture.createTextTexture()` and pass an `ITextOptions` object. The texture is created synchronously: the canvas is sized, text is drawn, and the GPU upload happens immediately in the constructor.
+
+```typescript
+const label = rapid.texture.createTextTexture({
+  text: "Hello World",
+  fontFamily: "Arial",
+  fontSize: 32,
+  fill: "#ffffff",
+  stroke: "#000000",
+  strokeThickness: 2,
+  align: "left",
+  baseline: "top",
+});
+```
+
+## ITextStyle Options
+
+All style properties are optional. Rapid merges your values with the defaults shown below.
+
+<ParamField path="fontFamily" type="string">
+  CSS font family string passed directly to the 2D Canvas context. Supports stacks such as `"Georgia, serif"`. Default: `"Arial"`.
+</ParamField>
+
+<ParamField path="fontSize" type="number">
+  Font size in logical pixels. The canvas is rendered at the device pixel ratio (`window.devicePixelRatio`) so text stays sharp on high-DPI screens. Default: `24`.
+</ParamField>
+
+<ParamField path="fontWeight" type="string">
+  CSS font weight, e.g. `"normal"`, `"bold"`, `"700"`. Default: `"normal"`.
+</ParamField>
+
+<ParamField path="fill" type="string | CanvasGradient | CanvasPattern">
+  The fill style for the text glyphs. Accepts any value valid for `CanvasRenderingContext2D.fillStyle`. Default: `"#000000"`.
+</ParamField>
+
+<ParamField path="stroke" type="string | CanvasGradient | CanvasPattern">
+  The stroke style drawn behind the fill. Only rendered when `strokeThickness` is greater than `0`. Leave unset to skip stroking.
+</ParamField>
+
+<ParamField path="strokeThickness" type="number">
+  Stroke line width in logical pixels. A value of `0` disables the stroke. Default: `1`.
+</ParamField>
+
+<ParamField path="align" type='"left" | "center" | "right"'>
+  Horizontal alignment of the text within the texture. This also controls the `offsetX` of the texture so that the draw position `(x, y)` acts as the intended anchor. Default: `"left"`.
+</ParamField>
+
+<ParamField path="baseline" type="CanvasTextBaseline">
+  Vertical alignment anchor. Accepted values are `"top"`, `"middle"`, `"bottom"`, `"alphabetic"`, `"hanging"`, and `"ideographic"`. This controls the `offsetY` of the texture. Default: `"top"`.
+</ParamField>
+
+In addition to the style fields above, `ITextOptions` also accepts an initial `text` string and any `ITextureOptions` fields (`textureFilter`, `wrap`, `premultipliedAlpha`, `key`).
+
+## Drawing Text
+
+A `TextTexture` is a `Texture` subclass, so you draw it with `drawSprite` exactly as you would any other image:
+
+```typescript
+rapid.drawSprite({ texture: label, x: 100, y: 50 });
+```
+
+All sprite transforms (`rotation`, `scale`, `origin`, etc.) work normally.
+
+## Updating Text and Style at Runtime
+
+You can change the content or appearance of a `TextTexture` after creation by assigning to the `.text` and `.style` setters. Either assignment internally re-renders the canvas and re-uploads the texture to the GPU. The canvas is only resized when the new text requires a different pixel size, making small updates efficient.
+
+```typescript
+// Update just the text string
+label.text = `Score: ${score}`;
+
+// Update style properties (merged with existing style)
+label.style = { fill: score > 1000 ? "#ffd700" : "#ffffff" };
+
+// Update both at once by assigning to .text first, then .style
+label.text = "New message";
+label.style = { fontSize: 28, stroke: "#000033" };
+```
+
+<Tip>
+  Reuse a single `TextTexture` object and update `.text` rather than calling `rapid.texture.createTextTexture()` each frame. Creating a new texture on every frame allocates a new canvas, a new WebGL texture object, and triggers a full GPU upload — all of which add up quickly in a 60 fps loop.
+</Tip>
+
+## Multi-line Text
+
+Use `\n` in the `text` string to break text into multiple lines. `TextTexture` splits on newlines, measures each line independently, and stacks them vertically with the correct line height derived from the font metrics.
+
+```typescript
+const multiLine = rapid.texture.createTextTexture({
+  text: "Line one\nLine two\nLine three",
+  fontSize: 20,
+  fill: "#ffffff",
+  stroke: "#000000",
+  strokeThickness: 2,
+});
+
+rapid.drawSprite({ texture: multiLine, x: 50, y: 100 });
+```
+
+## Anchor Behavior: align and baseline
+
+The `align` and `baseline` style options do more than control how glyphs are laid out inside the texture — they also shift the texture's `offsetX` and `offsetY` so that the `(x, y)` you pass to `drawSprite` becomes the logical anchor of the text, not its top-left pixel corner.
+
+| align    | Effect on offsetX              |
+|----------|-------------------------------|
+| `"left"` | `offsetX = 0` (anchor at left edge)  |
+| `"center"` | `offsetX = -width / 2` (anchor at horizontal center) |
+| `"right"` | `offsetX = -width` (anchor at right edge) |
+
+| baseline    | Effect on offsetY                         |
+|-------------|------------------------------------------|
+| `"top"` / others | `offsetY = 0` (anchor at top edge) |
+| `"middle"` | `offsetY = -height / 2` (anchor at vertical center) |
+| `"bottom"` | `offsetY = -height` (anchor at bottom edge) |
+
+This means that if you draw a `center`/`middle` text label at `(400, 300)`, the rendered text will be visually centered on that coordinate — which is the expected behavior for HUD elements and dialogue boxes.
+
+```typescript
+const centeredLabel = rapid.texture.createTextTexture({
+  text: "Game Over",
+  fontSize: 48,
+  fontWeight: "bold",
+  fill: "#ff4444",
+  align: "center",
+  baseline: "middle",
+});
+
+// Renders centered on (480, 270) — the screen midpoint
+rapid.drawSprite({ texture: centeredLabel, x: 480, y: 270 });
+```
+
+## Texture Filter Mode
+
+By default Rapid uses `TextureFilterMode.NEAREST`, which is great for pixel-art sprites but produces jagged edges on text. Set `textureFilter` to `TextureFilterMode.LINEAR` when creating a `TextTexture` for cleaner, anti-aliased rendering.
+
+```typescript
+import { TextureFilterMode } from "rapid.js";
+
+const smoothLabel = rapid.texture.createTextTexture({
+  text: "Hello",
+  fontSize: 32,
+  fill: "#ffffff",
+  textureFilter: TextureFilterMode.LINEAR,
+});
+```
+
+<Tip>
+  You can also set `textureFilter: TextureFilterMode.LINEAR` globally in the `Rapid` constructor options and all subsequently created textures — including `TextTexture` — will default to linear filtering.
+</Tip>
+
+## Full Example
+
+The pattern below comes directly from the Rapid.js text demo. It shows how to create a `Rapid` instance configured for text, build multiple styled `TextTexture` objects up front, and update one dynamically each frame:
+
+```typescript
+import { Color } from "rapid.js/color";
+import { Rapid, TextureFilterMode } from "rapid.js/render";
+import { TextureWrapMode } from "rapid.js/texture";
+
+const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+const rapid = new Rapid({
+  canvas,
+  logicWidth: 960,
+  logicHeight: 720,
+  backgroundColor: Color.fromHex("#f7f8fb"),
+  textureFilter: TextureFilterMode.LINEAR, // use LINEAR globally for text
+});
+
+// Factory helper — keeps default style shared across all labels
+const makeText = (options) =>
+  rapid.texture.createTextTexture({
+    fontFamily: "Arial, sans-serif",
+    fontSize: 24,
+    fontWeight: "600",
+    fill: "#17202a",
+    stroke: "#ffffff",
+    strokeThickness: 3,
+    align: "left",
+    baseline: "top",
+    textureFilter: TextureFilterMode.LINEAR,
+    wrap: TextureWrapMode.CLAMP,
+    ...options,
+  });
+
+// Static title — created once
+const title = makeText({
+  text: "TextTexture Demo\nfill / stroke / font / multi-line",
+  fontFamily: "Georgia, serif",
+  fontSize: 38,
+  fontWeight: "700",
+  fill: "#163a5f",
+  stroke: "#dff2ff",
+  strokeThickness: 5,
+});
+
+// Dynamic label — text and style updated every frame
+const dynamic = makeText({
+  text: "0.0s",
+  fontSize: 26,
+  fontWeight: "700",
+  align: "center",
+  baseline: "middle",
+});
+
+let time = 0;
+let lastUpdateBucket = -1;
+
+function loop(dt: number) {
+  time += dt;
+  rapid.clear();
+
+  // Draw static title
+  rapid.drawSprite({ texture: title, x: 48, y: 38 });
+
+  // Update dynamic label at 10 Hz to avoid per-frame GPU uploads
+  const bucket = Math.floor(time * 10);
+  if (bucket !== lastUpdateBucket) {
+    lastUpdateBucket = bucket;
+    const hue = Math.round(175 + (Math.sin(time * 3) * 0.5 + 0.5) * 95);
+    dynamic.text = `elapsed: ${time.toFixed(1)}s`;
+    dynamic.style = { fill: `hsl(${hue}, 70%, 38%)` };
+  }
+
+  rapid.drawSprite({ texture: dynamic, x: 480, y: 400 });
+  rapid.flush();
+}
+```
+
+Key points from the example:
+- Rapid is initialized with `textureFilter: TextureFilterMode.LINEAR` so all text textures get smooth sampling without per-texture configuration.
+- A factory function (`makeText`) holds the shared default style, keeping individual `createTextTexture` calls concise.
+- The dynamic label is updated at 10 Hz (`Math.floor(time * 10)` bucket throttle) rather than every frame, which halves GPU texture upload frequency with no visible difference at 60 fps.
+- `rapid.flush()` is called at the end of the loop to ensure the final batch is submitted before the frame is presented.

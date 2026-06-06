@@ -1,0 +1,377 @@
+---
+title: "Texture Class — UV Regions and Sub-Textures"
+sidebarTitle: "Texture"
+description: "API reference for Texture: UV region, sub-texture extraction, sprite sheet splitting, clone, and static factory methods."
+---
+
+`Texture` is a lightweight view over a `BaseTexture`. Multiple `Texture` objects can reference the same GPU resource simultaneously, each describing a different rectangular UV region within it. This makes `Texture` the natural building block for sprite sheets, atlases, and any use-case where you want to pack many images onto a single GPU upload.
+
+<Note>
+  `Texture` instances track their `BaseTexture` through reference counting.
+  Always call `destroy()` when you are done with a texture you own so the GPU
+  memory can be reclaimed when no other views remain.
+</Note>
+
+---
+
+## Public Properties
+
+<ParamField path="base" type="BaseTexture | undefined">
+  The underlying GPU resource shared by this view. `undefined` after
+  `destroy()` has been called.
+</ParamField>
+
+<ParamField path="uvX" type="number">
+  Left edge of the UV clipping region, in the `[0, 1]` range.
+</ParamField>
+
+<ParamField path="uvY" type="number">
+  Top edge of the UV clipping region, in the `[0, 1]` range.
+</ParamField>
+
+<ParamField path="uvW" type="number">
+  Right edge of the UV clipping region (i.e. `uvX + uvWidth`), in the `[0, 1]`
+  range.
+</ParamField>
+
+<ParamField path="uvH" type="number">
+  Bottom edge of the UV clipping region (i.e. `uvY + uvHeight`), in the
+  `[0, 1]` range.
+</ParamField>
+
+<ParamField path="rawWidth" type="number">
+  Width of the region in source pixels, before `scale` is applied.
+</ParamField>
+
+<ParamField path="rawHeight" type="number">
+  Height of the region in source pixels, before `scale` is applied.
+</ParamField>
+
+<ParamField path="width" type="number">
+  Read-only computed display width. Equals `rawWidth × scale` normally, or
+  `rawHeight × scale` when `isRotated` is `true` (the axes are swapped for
+  rotated atlas packing).
+</ParamField>
+
+<ParamField path="height" type="number">
+  Read-only computed display height. Equals `rawHeight × scale` normally, or
+  `rawWidth × scale` when `isRotated` is `true`.
+</ParamField>
+
+<ParamField path="offsetX" type="number">
+  Draw offset applied along the X axis at render time. Used by `TextTexture` to
+  implement text alignment without moving the draw position.
+</ParamField>
+
+<ParamField path="offsetY" type="number">
+  Draw offset applied along the Y axis at render time. Used by `TextTexture` to
+  implement baseline alignment.
+</ParamField>
+
+<ParamField path="scale" type="number">
+  Display scale factor applied to `rawWidth`/`rawHeight` when computing `width`
+  and `height`. Defaults to `1`. `TextTexture` sets this to `1 / dpr` so that
+  the high-DPR canvas pixels render at logical size.
+</ParamField>
+
+<ParamField path="flipY" type="boolean">
+  When `true`, the texture is rendered vertically flipped. `RenderTexture` and
+  `TextTexture` both set this to `true` to compensate for WebGL's bottom-left
+  origin and canvas coordinate differences.
+</ParamField>
+
+<ParamField path="isRotated" type="boolean">
+  When `true`, the UV region is stored 90° rotated in the atlas. The `width`
+  and `height` getters swap `rawWidth`/`rawHeight` accordingly so that sprite
+  dimensions remain correct.
+</ParamField>
+
+<ParamField path="isAtlas" type="boolean">
+  `true` if this `Texture` represents a sub-region of a larger `BaseTexture`
+  (i.e. the region does not cover the full GPU texture). Set automatically by
+  `setRegion()`.
+</ParamField>
+
+---
+
+## Methods
+
+### `setBase(base)`
+
+Assigns a new `BaseTexture` to this view, incrementing the new texture's
+`refCount` and decrementing the previous one's. Also resets the UV region to
+cover the full new texture.
+
+```typescript
+texture.setBase(newBase);
+```
+
+**Parameters**
+
+<ParamField path="base" type="BaseTexture" required>
+  The new underlying GPU resource to attach.
+</ParamField>
+
+**Returns:** `this` — for method chaining.
+
+---
+
+### `setRegion(x, y, w, h)`
+
+Defines the visible rectangular clip region within the `BaseTexture`, expressed
+in source pixels. UV coordinates are computed automatically.
+
+```typescript
+// Show only the top-left 32×32 pixels of a 128×128 texture
+texture.setRegion(0, 0, 32, 32);
+```
+
+**Parameters**
+
+<ParamField path="x" type="number" required>
+  Left edge of the region in pixels, relative to the `BaseTexture` origin.
+</ParamField>
+
+<ParamField path="y" type="number" required>
+  Top edge of the region in pixels, relative to the `BaseTexture` origin.
+</ParamField>
+
+<ParamField path="w" type="number" required>
+  Width of the region in pixels.
+</ParamField>
+
+<ParamField path="h" type="number" required>
+  Height of the region in pixels.
+</ParamField>
+
+**Returns:** `this` — for method chaining.
+
+---
+
+### `getSubTexture(x, y, width, height)`
+
+Returns a new `Texture` that describes a rectangle relative to *this* texture's
+current region. The coordinates are local to the current view, not to the
+underlying `BaseTexture`.
+
+```typescript
+// Within a 128×64 sheet, grab the tile at column 2, row 0
+const tile = sheet.getSubTexture(32, 0, 16, 16);
+```
+
+**Parameters**
+
+<ParamField path="x" type="number" required>
+  X offset in pixels, relative to this texture's top-left corner.
+</ParamField>
+
+<ParamField path="y" type="number" required>
+  Y offset in pixels, relative to this texture's top-left corner.
+</ParamField>
+
+<ParamField path="width" type="number" required>
+  Width of the sub-region in pixels.
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  Height of the sub-region in pixels.
+</ParamField>
+
+**Returns:** `Texture`
+
+---
+
+### `splitGrid(cellWidth, cellHeight, cols?, rows?)`
+
+Splits this texture into a uniform grid of equally-sized cells and returns them
+as a flat array in row-major order (left-to-right, top-to-bottom). Great for
+slicing sprite sheets and tile sets.
+
+```typescript
+const frames = sheet.splitGrid(16, 16);
+// frames[0] → row 0, col 0
+// frames[1] → row 0, col 1
+```
+
+**Parameters**
+
+<ParamField path="cellWidth" type="number" required>
+  Width of each cell in pixels.
+</ParamField>
+
+<ParamField path="cellHeight" type="number" required>
+  Height of each cell in pixels.
+</ParamField>
+
+<ParamField path="cols" type="number">
+  Number of columns to extract. Defaults to `Math.floor(rawWidth / cellWidth)`.
+</ParamField>
+
+<ParamField path="rows" type="number">
+  Number of rows to extract. Defaults to `Math.floor(rawHeight / cellHeight)`.
+</ParamField>
+
+**Returns:** `Texture[]`
+
+---
+
+### `clone(target?)`
+
+Creates a shallow copy of this `Texture`. The copy shares the same `BaseTexture`
+(incrementing its `refCount`) and inherits all UV, scale, offset, and flag
+properties. Useful for producing per-instance copies that can have their region
+mutated independently.
+
+```typescript
+const copy = original.clone();
+copy.setRegion(32, 0, 16, 16); // original is unaffected
+```
+
+**Parameters**
+
+<ParamField path="target" type="Texture">
+  Optional existing `Texture` to copy into. If omitted, a new instance is
+  allocated.
+</ParamField>
+
+**Returns:** `Texture`
+
+---
+
+### `destroy()`
+
+Decrements the `BaseTexture` reference count and clears the internal reference.
+The GPU resource is not deleted here — that happens inside `TextureManager` (or
+`BaseTexture.destroy()`) once the `refCount` reaches zero.
+
+```typescript
+myTexture.destroy();
+```
+
+**Returns:** `void`
+
+---
+
+### `static fromImageSource(render, source, options?)`
+
+Creates a `Texture` (and an implicit `BaseTexture`) directly from a browser
+media source, bypassing `TextureManager` entirely. Use this when you need a
+one-off texture and do not want it cached.
+
+```typescript
+const tex = Texture.fromImageSource(rapid, myImageElement, {
+  textureFilter: TextureFilterMode.LINEAR,
+});
+```
+
+**Parameters**
+
+<ParamField path="render" type="Rapid" required>
+  The active `Rapid` renderer instance.
+</ParamField>
+
+<ParamField path="source" type="Images" required>
+  The pixel source (`HTMLImageElement`, `HTMLCanvasElement`, `HTMLVideoElement`,
+  `ImageBitmap`, or `OffscreenCanvas`).
+</ParamField>
+
+<ParamField path="options" type="ITextureOptions">
+  Optional texture configuration (filter mode, wrap mode, premultiplied alpha).
+</ParamField>
+
+**Returns:** `Texture`
+
+---
+
+## BaseTexture
+
+`BaseTexture` owns the actual WebGL texture object and implements reference
+counting. You rarely need to interact with it directly, but the API is available
+for advanced use-cases such as dynamically updating video frame textures.
+
+### Properties
+
+<ParamField path="glTexture" type="WebGLTexture | null">
+  The raw WebGL texture handle. `null` after `destroy()`.
+</ParamField>
+
+<ParamField path="width" type="number">
+  Width of the GPU-allocated texture in pixels.
+</ParamField>
+
+<ParamField path="height" type="number">
+  Height of the GPU-allocated texture in pixels.
+</ParamField>
+
+<ParamField path="uid" type="string | undefined">
+  Optional identifier string. `TextureManager` sets this to the load URL so it
+  can evict the entry from its cache on destruction.
+</ParamField>
+
+<ParamField path="refCount" type="number">
+  Number of `Texture` views currently referencing this `BaseTexture`. The GPU
+  resource should only be freed when this reaches zero.
+</ParamField>
+
+### `static fromSource(render, source, options?)`
+
+Uploads a browser media element to the GPU and returns a new `BaseTexture`.
+
+**Returns:** `BaseTexture`
+
+### `updateSource(gl, source, options?)`
+
+Re-uploads pixel data from `source` into the existing GPU texture. When the
+source dimensions match the current allocation, uses `texSubImage2D` for a
+cheaper update path; otherwise re-allocates with `texImage2D` and updates
+`width`/`height`.
+
+Handy for live-updating a video texture every frame:
+
+```typescript
+// Inside your game loop
+base.updateSource(rapid.gl, videoElement);
+```
+
+### `setFilterMode(gl, filterMode)`
+
+Changes the texture's minification/magnification filter at any time after
+creation.
+
+### `setWrapMode(gl, wrapMode)`
+
+Changes the texture's UV wrap mode at any time after creation.
+
+### `destroy(gl)`
+
+Calls `gl.deleteTexture()` and nulls the internal handle. Should only be called
+when `refCount` is zero.
+
+---
+
+## Code Examples
+
+```typescript
+// Load and sub-divide a sprite sheet
+const sheet = await rapid.texture.load("/assets/tileset.png");
+
+// Split the entire sheet into 16×16 tiles
+const tiles = sheet.splitGrid(16, 16);
+
+// Or grab a specific frame manually
+const walkFrame = sheet.getSubTexture(0, 32, 16, 16);
+
+// Clone a tile to adjust its scale without affecting the original
+const bigTile = tiles[0].clone();
+bigTile.scale = 2;
+```
+
+```typescript
+// Dynamically update a video texture each frame
+const videoTex = rapid.texture.create(videoElement);
+
+rapid.on("update", () => {
+  videoTex.base?.updateSource(rapid.gl, videoElement);
+  rapid.drawSprite({ texture: videoTex, x: 0, y: 0 });
+});
+```

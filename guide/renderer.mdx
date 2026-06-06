@@ -1,0 +1,231 @@
+---
+title: "Rapid Renderer: Configuration and Lifecycle"
+sidebarTitle: "Renderer"
+description: "Configure the Rapid WebGL2 renderer with canvas dimensions, pixel ratio, background color, texture filtering, and scale modes. Manage the frame lifecycle."
+---
+
+`Rapid` is the central class of the engine — every draw call, texture, matrix operation, and render target flows through a single instance of it. You create one `Rapid` per canvas element, pass in your configuration options, and then drive each frame with `clear()` / draw / `flush()`.
+
+## Creating a Renderer
+
+Pass an `IAppOptions` object to the `Rapid` constructor. Only `canvas` is required; all other fields have sensible defaults.
+
+```typescript
+import { Rapid, TextureFilterMode, CanvasScaleMode } from "rapid.js";
+
+const rapid = new Rapid({
+  canvas: document.getElementById("canvas") as HTMLCanvasElement,
+  logicWidth: 960,
+  logicHeight: 540,
+  backgroundColor: Color.fromHex("#1a1a2e"),
+  textureFilter: TextureFilterMode.NEAREST,
+});
+```
+
+## IAppOptions Reference
+
+<ParamField path="canvas" type="HTMLCanvasElement" required>
+  The HTML canvas element to render onto. Rapid acquires a `WebGL2RenderingContext` from this element at construction time.
+</ParamField>
+
+<ParamField path="logicWidth" type="number">
+  The logical width of the application in CSS pixels. This defines the coordinate space used for all draw calls and the orthographic projection. Defaults to `physicsWidth / dpr` when omitted.
+</ParamField>
+
+<ParamField path="logicHeight" type="number">
+  The logical height of the application in CSS pixels. Defaults to `physicsHeight / dpr` when omitted.
+</ParamField>
+
+<ParamField path="physicsWidth" type="number">
+  The physical (GPU backbuffer) width in actual device pixels. Defaults to `canvas.clientWidth * devicePixelRatio`.
+</ParamField>
+
+<ParamField path="physicsHeight" type="number">
+  The physical (GPU backbuffer) height in actual device pixels. Defaults to `canvas.clientHeight * devicePixelRatio`.
+</ParamField>
+
+<ParamField path="backgroundColor" type="Color">
+  The default clear color applied at the start of each frame via `rapid.clear()`. Defaults to opaque black (`Color.Black`).
+</ParamField>
+
+<ParamField path="antialias" type="boolean" default="false">
+  Requests MSAA antialiasing on the WebGL canvas context. Has no effect if the browser or GPU does not support it. Default is `false`.
+</ParamField>
+
+<ParamField path="textureFilter" type="TextureFilterMode" default="TextureFilterMode.NEAREST">
+  The default sampling filter applied when new textures are created. `NEAREST` produces crisp pixel art; `LINEAR` produces smooth bilinear interpolation. Individual textures can override this via `ITextureOptions`.
+</ParamField>
+
+<ParamField path="premultipliedAlpha" type="boolean" default="true">
+  Controls whether textures are uploaded and blended using premultiplied alpha. Keeping this `true` avoids "dark fringe" artifacts around transparent edges and matches the WebGL default. Default is `true`.
+</ParamField>
+
+<ParamField path="roundPixels" type="boolean" default="false">
+  When `true`, sprite positions are snapped to the nearest integer pixel before rendering. Reduces sub-pixel shimmer on pixel-art assets at the cost of slightly less smooth motion.
+</ParamField>
+
+<ParamField path="scaleMode" type="CanvasScaleMode" default="CanvasScaleMode.CanvasItem">
+  Controls how the canvas responds to DPI and CSS display size. See [Canvas Scale Modes](#canvas-scale-modes) below.
+</ParamField>
+
+---
+
+## Canvas Scale Modes
+
+`CanvasScaleMode` controls the relationship between the WebGL backbuffer resolution and the CSS display size of the `<canvas>` element.
+
+### `CanvasScaleMode.CanvasItem` (default)
+
+The WebGL backbuffer is sized at `physicsWidth × physicsHeight` (logical size multiplied by the device pixel ratio). The canvas CSS size stays at the logical dimensions. Rotated sprites, lines, and geometry are rasterized at the full display resolution — ideal for games targeting HD and Retina displays.
+
+```typescript
+const rapid = new Rapid({
+  canvas,
+  logicWidth: 480,
+  logicHeight: 270,
+  scaleMode: CanvasScaleMode.CanvasItem,
+  // On a 2× Retina screen the backbuffer is 960×540,
+  // but your coordinate space remains 480×270.
+});
+```
+
+### `CanvasScaleMode.Viewport`
+
+The WebGL backbuffer is sized at exactly `logicWidth × logicHeight`. The browser then stretches the canvas bitmap to fit the CSS display size using `image-rendering: pixelated`. No extra GPU fragments are produced while scaling up — this is the correct choice for pixel-art games that must preserve a low-resolution look.
+
+```typescript
+const rapid = new Rapid({
+  canvas,
+  logicWidth: 320,
+  logicHeight: 180,
+  scaleMode: CanvasScaleMode.Viewport,
+  // The backbuffer is always 320×180; the browser scales the bitmap.
+});
+```
+
+<Note>
+  `CanvasScaleMode.Viewport` automatically sets `image-rendering: pixelated` on the canvas element so the browser does not blur the upscaled image.
+</Note>
+
+---
+
+## Frame Lifecycle
+
+Every game loop follows the same three-step pattern: clear, draw, flush.
+
+### `rapid.clear()`
+
+Clears the color buffer and the stencil buffer using `backgroundColor`, resets the draw call counter (`drawcallCount`) to zero, and resets the matrix stack to the identity transform. Call this at the **beginning** of every frame before issuing any draw calls.
+
+```typescript
+function gameLoop() {
+  rapid.clear();
+
+  rapid.drawSprite({ texture: playerTex, x: 100, y: 200 });
+  rapid.drawRect({ x: 0, y: 0, width: 960, height: 540, color: skyColor });
+
+  rapid.flush();
+  requestAnimationFrame(gameLoop);
+}
+```
+
+### `rapid.flush()`
+
+Submits all pending batched draw calls to the GPU. Rapid batches geometry internally to minimize WebGL draw calls; `flush()` drains that batch. Call it at the **end** of every frame. It is also called automatically whenever the engine must switch rendering regions (e.g. changing blend mode or entering a render texture).
+
+### `rapid.resize(logicWidth, logicHeight)`
+
+Updates the canvas dimensions, recalculates `physicsWidth` / `physicsHeight`, and rebuilds the orthographic projection matrix. Call this whenever the browser window resizes.
+
+```typescript
+window.addEventListener("resize", () => {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  rapid.resize(w, h);
+});
+```
+
+<Tip>
+  When `scaleMode` is `CanvasScaleMode.Viewport` the logical coordinate space stays fixed at your design resolution — you typically do not need to call `resize()` on window resize. It is most useful with `CanvasItem` mode where you want the logical space to track the window.
+</Tip>
+
+---
+
+## Camera with `renderCamera`
+
+`rapid.renderCamera(transform)` applies a transform to the current matrix (position, rotation, scale) and then **inverts** it in place. This makes everything drawn afterwards appear as if the viewport has been scrolled or rotated by that transform — a lightweight, zero-overhead camera.
+
+```typescript
+function gameLoop() {
+  rapid.clear();
+
+  rapid.matrixStack.save();
+  rapid.renderCamera({ x: cameraX, y: cameraY });
+
+  // All world-space sprites are now offset by the camera.
+  for (const entity of worldEntities) {
+    rapid.drawSprite({ texture: entity.tex, x: entity.x, y: entity.y });
+  }
+
+  rapid.matrixStack.restore();
+
+  // HUD draws after restore — unaffected by the camera.
+  rapid.drawSprite({ texture: hudTex, x: 0, y: 0 });
+
+  rapid.flush();
+}
+```
+
+<Note>
+  `renderCamera` mutates the **current** world matrix. Always wrap it in a `matrixStack.save()` / `matrixStack.restore()` pair so the camera transform does not bleed into subsequent draw calls such as HUD elements.
+</Note>
+
+---
+
+## Public Properties
+
+These read-only properties are useful for layout, responsive design, and debugging.
+
+| Property | Type | Description |
+|---|---|---|
+| `drawcallCount` | `number` | Number of WebGL draw calls issued in the current frame. Reset by `clear()`. |
+| `logicWidth` | `number` | Current logical width in CSS pixels. |
+| `logicHeight` | `number` | Current logical height in CSS pixels. |
+| `physicsWidth` | `number` | Current GPU backbuffer width in device pixels. |
+| `physicsHeight` | `number` | Current GPU backbuffer height in device pixels. |
+| `dpr` | `number` | Device pixel ratio (`window.devicePixelRatio`), captured at construction. |
+| `matrixStack` | `MatrixStack` | The hierarchical transform stack. See [Transforms](/guide/transforms). |
+| `texture` | `TextureManager` | The texture loader and cache. See [Textures](/guide/textures). |
+
+---
+
+## Responsive Resize Example
+
+The following snippet wires `resize()` to the window and maintains a fixed aspect ratio.
+
+```typescript
+const LOGIC_W = 960;
+const LOGIC_H = 540;
+
+const rapid = new Rapid({
+  canvas: document.getElementById("canvas") as HTMLCanvasElement,
+  logicWidth: LOGIC_W,
+  logicHeight: LOGIC_H,
+  scaleMode: CanvasScaleMode.CanvasItem,
+});
+
+function onResize() {
+  // Keep the canvas filling the window while the logical space stays fixed.
+  const scale = Math.min(
+    window.innerWidth / LOGIC_W,
+    window.innerHeight / LOGIC_H
+  );
+  const cssW = Math.round(LOGIC_W * scale);
+  const cssH = Math.round(LOGIC_H * scale);
+
+  rapid.resize(LOGIC_W, LOGIC_H, cssW, cssH);
+}
+
+window.addEventListener("resize", onResize);
+onResize();
+```

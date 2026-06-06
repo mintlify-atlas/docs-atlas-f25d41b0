@@ -1,0 +1,188 @@
+---
+title: "CustomGlShader — Inject GLSL into the Rendering Pipeline"
+sidebarTitle: "CustomGlShader"
+description: "API reference for CustomGlShader: inject vertex and fragment GLSL hooks into the Rapid.js sprite and graphic pipelines, set uniforms, and chain filter passes."
+---
+
+`CustomGlShader` injects user-provided GLSL `vertex()` and `fragment()` hook functions into the engine's built-in sprite and graphic shaders, without replacing the full program. Rather than writing a complete shader from scratch, you supply two small GLSL snippets that are spliced into the engine's template at compile time. Compilation is lazy — a distinct `GLShader` is compiled the first time each rendering region encounters the shader, so there is no upfront cost for regions that never draw with it.
+
+## Constructor
+
+```typescript
+new CustomGlShader(
+  rapid: Rapid,
+  vs: string,
+  fs: string,
+  usedTextureUnitNum?: number,
+  uniforms?: Record<string, UniformValue>
+)
+```
+
+<ParamField path="rapid" type="Rapid" required>
+  The active `Rapid` renderer instance. Required so that `setUniforms` can call `rapid.flush()` before mutating uniform state.
+</ParamField>
+
+<ParamField path="vs" type="string" required>
+  Vertex hook GLSL source. Must define the function `void vertex(vec2 position, vec4 vRegion) {}`. The body is called from the engine's vertex shader immediately after the built-in transform.
+</ParamField>
+
+<ParamField path="fs" type="string" required>
+  Fragment hook GLSL source. Must define the function `void fragment(inout vec4 fragColor) {}`. The body is called from the engine's fragment shader with the fully-composited sprite colour as input; modify `fragColor` in-place to change the final pixel output.
+</ParamField>
+
+<ParamField path="usedTextureUnitNum" type="number">
+  Number of additional texture units to reserve for your own samplers (default `0`). The engine occupies the first N units for sprite atlases; your textures are bound starting at unit N.
+</ParamField>
+
+<ParamField path="uniforms" type="Record<string, UniformValue>">
+  Initial uniform values applied when the first `GLShader` is compiled for a region. Equivalent to calling `setUniforms` immediately after construction.
+</ParamField>
+
+## GLSL Hook Signatures
+
+Both hooks must be present in their respective source strings. The engine splices each hook into its shader template and calls it at the appropriate stage.
+
+```glsl
+// Vertex hook — injected into the engine vertex shader
+// position: the vertex position in world space
+// vRegion:  the sprite's texture region (x, y, w, h) as a vec4
+void vertex(vec2 position, vec4 vRegion) {
+    // Read or modify built-in varyings here.
+    // gl_Position has NOT yet been written when this is called.
+}
+
+// Fragment hook — injected into the engine fragment shader
+// fragColor: the fully-composited RGBA colour for this fragment
+void fragment(inout vec4 fragColor) {
+    // Modify fragColor to change the pixel output.
+}
+```
+
+## Public Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `vs` | `string` | The vertex hook source provided at construction. |
+| `fs` | `string` | The fragment hook source provided at construction. |
+| `uniforms` | `Record<string, UniformValue>` | Current uniform values. Updated by `setUniforms`. |
+| `padding` | `number` | Extra pixels expanded on each side of the sprite quad. Set via `setPadding`. |
+| `usedTextureUnitNum` | `number` | Number of additional texture units reserved for user-supplied textures. |
+| `uniformTextures` | `Record<string, WebGLTexture>` | Map of texture uniform names to `WebGLTexture` objects to bind when this shader is active. |
+
+## Methods
+
+### `setUniforms(map)`
+
+Set uniform values or bind WebGL textures. Internally calls `rapid.flush()` first to ensure that any in-progress draw batch is submitted with the previous uniform state before the new values take effect.
+
+Plain `UniformValue` entries update the `uniforms` map; `WebGLTexture` entries update `uniformTextures`. All currently-compiled per-region `GLShader` instances are marked dirty so they pick up the new values on their next draw call.
+
+```typescript
+setUniforms(uniforms: Record<string, UniformValue | WebGLTexture>): void
+```
+
+```typescript
+shader.setUniforms({
+  uTime:       performance.now() / 1000,
+  uResolution: [800, 600],
+  uNoiseTex:   noiseTexture.base!.glTexture!,
+});
+```
+
+---
+
+### `setPadding(pixels)`
+
+Expand the sprite quad by `pixels` on every side. This is necessary for effects such as outlines, glows, or blurs that produce visible output outside the original sprite boundary. Returns `this` for chaining.
+
+Propagates immediately to all already-compiled `GLShader` instances managed by this `CustomGlShader`.
+
+```typescript
+setPadding(pixels: number): this
+```
+
+```typescript
+const outline = new CustomGlShader(rapid, vs, fs);
+outline.setPadding(4); // 4-pixel margin on each side
+```
+
+---
+
+### `applyUniform(key, textureUniforms)` *(internal)*
+
+Applies pending uniform and texture-unit assignments to the compiled `GLShader` for the given region key. Called automatically by the render pipeline; you do not need to call this directly.
+
+---
+
+### `getGLShader(region, key, baseVS?, baseFS?)` *(internal)*
+
+Retrieves the cached `GLShader` for a region, or compiles a new one by splicing the hook source into the engine's base shader templates. Called automatically by the render pipeline; you do not need to call this directly.
+
+---
+
+## Practical Example
+
+```typescript
+import { CustomGlShader } from "rapid-render";
+
+// Hue-shift shader — rotates the hue of every sprite it is applied to
+const hueShift = new CustomGlShader(
+  rapid,
+  // Vertex hook: no-op
+  `void vertex(vec2 position, vec4 vRegion) {}`,
+  // Fragment hook: rotate hue by uHue (0.0 – 1.0 = full circle)
+  `
+  uniform float uHue;
+
+  void fragment(inout vec4 color) {
+    float angle   = uHue * 3.14159 * 2.0;
+    float s = sin(angle), c = cos(angle);
+    vec3 weights  = vec3(0.213, 0.715, 0.072);
+    float len     = dot(color.rgb, weights);
+    color.rgb = vec3(
+      len + (color.r - len) * c - color.g * weights.g * s,
+      len + (color.g - len) * c + color.r * weights.r * s,
+      len + (color.b - len) * c
+    );
+  }
+  `,
+);
+
+// Update the hue each frame and draw a sprite with the shader active
+function onFrame() {
+  hueShift.setUniforms({ uHue: (performance.now() / 2000) % 1.0 });
+  rapid.drawSprite({ texture, shader: hueShift });
+}
+```
+
+### Outline Effect with Padding
+
+```typescript
+const outline = new CustomGlShader(
+  rapid,
+  `void vertex(vec2 position, vec4 vRegion) {}`,
+  `
+  uniform sampler2D uSprite;
+  uniform vec4      uOutlineColor;
+  uniform vec2      uTexelSize;
+
+  void fragment(inout vec4 fragColor) {
+    float a = fragColor.a;
+    if (a < 0.01) {
+      // Sample neighbours to detect the edge of the original sprite
+      float neighbour =
+        texture(uSprite, v_texCoord + vec2( uTexelSize.x, 0.0)).a +
+        texture(uSprite, v_texCoord + vec2(-uTexelSize.x, 0.0)).a +
+        texture(uSprite, v_texCoord + vec2(0.0,  uTexelSize.y)).a +
+        texture(uSprite, v_texCoord + vec2(0.0, -uTexelSize.y)).a;
+      if (neighbour > 0.0) fragColor = uOutlineColor;
+    }
+  }
+  `,
+  0,
+  { uOutlineColor: [1.0, 1.0, 0.0, 1.0] }
+);
+
+// Expand the quad so the outline pixels have room to render
+outline.setPadding(2);
+```

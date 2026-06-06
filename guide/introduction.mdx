@@ -1,0 +1,73 @@
+---
+title: "Rapid.js: Blazing-Fast WebGL2 2D Rendering Engine"
+sidebarTitle: "Introduction"
+description: "Rapid.js is a stateless, data-driven WebGL2 2D rendering engine for browser games. It delivers instanced sprites, custom shaders, particles, and render textures."
+---
+
+Rapid.js is a stateless, data-driven WebGL2 2D rendering engine built for browser games. Rather than maintaining a scene graph or mutable display objects, Rapid.js asks you to call draw functions every frame and pass plain option objects describing what to render. The GPU does the rest. This approach eliminates the overhead of tracking object state, dirty flags, and tree traversals — giving you a direct, predictable path from your game data to pixels on screen.
+
+## Design Philosophy
+
+Rapid.js is deliberately frameless: there are no sprites to instantiate, no nodes to add to a tree, and no properties to mutate between frames. Every draw call — `rapid.drawSprite()`, `rapid.drawRect()`, `rapid.drawCircle()` — accepts a self-contained options object and is batched internally until you call `rapid.flush()`. This data-driven contract means your game logic owns the truth about what should be on screen, and Rapid.js is purely responsible for getting it there as fast as possible.
+
+Each frame follows the same three-step rhythm:
+
+1. **`rapid.clear()`** — wipe the framebuffer and reset the matrix stack.
+2. **Draw calls** — call any combination of `drawSprite`, `drawRect`, `drawLine`, etc., with per-call transform and style options.
+3. **`rapid.flush()`** — submit all remaining batched geometry to the GPU.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Instanced Sprites" icon="images">
+    Sprites are batched using WebGL2 instanced rendering. Thousands of textured quads can be dispatched in a single draw call, making sprite-heavy games extremely efficient.
+  </Card>
+  <Card title="Transform Stack" icon="layer-group">
+    A `MatrixStack` lets you push, pop, and compose hierarchical 2D transforms — translation, rotation, scale, and origin-relative pivoting — without allocating new matrix objects every frame.
+  </Card>
+  <Card title="Render Textures" icon="square">
+    Render any draw calls into an offscreen `RenderTexture`, then use that texture as input to subsequent draw calls. Enables post-processing, shadow maps, and UI caching.
+  </Card>
+  <Card title="Particle System" icon="sparkles">
+    A built-in particle system drives hundreds of independently animated particles through the same batched sprite path, keeping particle effects GPU-efficient by default.
+  </Card>
+  <Card title="Custom GLSL Shaders" icon="code">
+    Attach a `CustomGlShader` to any draw call to override the default vertex or fragment program. Chain multiple shaders with `applyFilters()` for multi-pass filter pipelines.
+  </Card>
+  <Card title="Text Rendering" icon="text-size">
+    `TextTexture` rasterizes text via an internal HTML Canvas and uploads the result as a WebGL texture. Text and style can be updated at runtime without rebuilding the texture object.
+  </Card>
+  <Card title="Blend Modes" icon="wand-magic-sparkles">
+    Switch between `NORMAL`, `ADD`, `MULTIPLY`, `SCREEN`, and `ERASE` blend modes per-batch. Use the `withBlendMode()` helper to scope a blend mode to a specific set of draw calls.
+  </Card>
+  <Card title="Masking" icon="mask">
+    Stencil-buffer masking lets you clip any draw calls to an arbitrary shape. `withMask()` handles the full stencil write/test/clear cycle in a single callback-based API.
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+Everything in Rapid.js flows through a single **`Rapid`** instance. It holds the WebGL context, owns the rendering pipeline, and exposes every public API.
+
+| Subsystem | What it does |
+|---|---|
+| **`Rapid`** | Central class. Owns the WebGL context, projection matrix, blend state, and all draw methods. |
+| **`TextureManager`** (`rapid.texture`) | Loads images from URLs (`load()`), creates `RenderTexture` objects, and creates `TextTexture` instances for text rendering. |
+| **`MatrixStack`** (`rapid.matrixStack`) | Maintains a stack of 2D affine transform matrices. Draw calls read from the top of the stack to position geometry in logical space. |
+| **`SpriteRegion`** | Internal WebGL region that batches textured quads using instanced rendering. Activated automatically by `drawSprite()`. |
+| **`GraphicRegion`** | Internal WebGL region that batches arbitrary vertex geometry. Activated automatically by `drawRect()`, `drawCircle()`, `drawLine()`, and `startGraphic()`. |
+| **`CustomGlShader`** | Wraps a GLSL vertex + fragment shader pair. Pass one to any draw call via the `shader` option to override the region's default program. |
+
+Regions are switched automatically: when you call `drawSprite()` after `drawRect()`, Rapid flushes the graphic batch, swaps to the sprite region, and continues batching. You never manage GPU state switches by hand.
+
+### Regions and Batching
+
+Rapid uses two primary render regions — `SpriteRegion` for textured quads and `GraphicRegion` for arbitrary geometry. A region accumulates vertex data in a CPU-side buffer and only issues a WebGL draw call when it must: when the buffer is full, when a region switch is needed, or when you call `rapid.flush()`. Minimizing explicit flushes and mixing sprite/graphic calls as little as possible gives you the best batching efficiency.
+
+### Coordinate System
+
+Rapid.js uses a **top-left origin** coordinate system. `(0, 0)` is the top-left corner of the logical viewport. The logical dimensions (`logicWidth` × `logicHeight`) define the coordinate space your game uses for all draw calls, independent of the physical pixel dimensions of the canvas.
+
+## Next Steps
+
+Ready to see it in action? Head to the [Quickstart](/guide/quickstart) to build a working game loop in under five minutes.

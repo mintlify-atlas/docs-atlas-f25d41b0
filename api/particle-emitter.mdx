@@ -1,0 +1,310 @@
+---
+title: "ParticleEmitter and Particle System API Reference"
+sidebarTitle: "ParticleEmitter"
+description: "Complete API reference for ParticleEmitter and related interfaces: emit shapes, animated attributes, start/end value ranges, damping, and world/local space."
+---
+
+`ParticleEmitter` manages a pool of `Particle` objects. Each particle interpolates animated attributes — speed, rotation, scale, color, velocity, and acceleration — over its lifetime. The emitter controls how particles are spawned (rate, burst, shape) and how they are positioned (world space vs. local space). Call `update(dt)` and `render()` every frame to drive the simulation.
+
+---
+
+## ParticleEmitter
+
+### Constructor
+
+```typescript
+new ParticleEmitter(rapid: Rapid, options: IParticleOptions)
+```
+
+<ParamField path="rapid" type="Rapid" required>
+  The Rapid renderer instance that the emitter draws into.
+</ParamField>
+
+<ParamField path="options" type="IParticleOptions" required>
+  Emitter configuration. See [IParticleOptions](#iparticleoptions) below.
+</ParamField>
+
+---
+
+### Public Properties
+
+<ParamField path="position" type="Vec2">
+  World position of the emitter. In `localSpace` mode this is applied as a translate transform around the entire particle batch. In world-space mode it is added to each particle's spawn position at birth.
+</ParamField>
+
+<ParamField path="localSpace" type="boolean">
+  When `true` (the default), particles are positioned relative to the emitter's `position`. When `false`, each particle is spawned at an absolute world-space coordinate derived from `position` at the moment of emission.
+</ParamField>
+
+---
+
+### Methods — Lifecycle
+
+#### `start(): void`
+
+Begin continuous emission. Resets the internal burst timer. Call once before the game loop begins, or whenever you want the emitter to resume after `stop()`.
+
+#### `stop(): void`
+
+Stop spawning new particles. Any particles that are already alive continue to simulate and render until their lifetime expires.
+
+#### `clear(): void`
+
+Immediately remove all live particles and reset all internal timers. The emitter stays in its current started/stopped state.
+
+#### `clone(): ParticleEmitter`
+
+Create a new `ParticleEmitter` that shares the same `IParticleOptions` configuration. No particle state is transferred — the clone starts empty.
+
+```typescript
+const clone = emitter.clone();
+clone.position = new Vec2(200, 400);
+clone.start();
+```
+
+---
+
+### Methods — Emission
+
+#### `emit(count: number): void`
+
+Spawn exactly `count` new particles immediately. Respects `maxParticles` — if the pool is near capacity, fewer particles may actually be created.
+
+#### `oneShot(): void`
+
+Emit `emitRate` particles in a single instantaneous burst. Useful for one-off effects such as explosions or impact sparks without running a continuous emitter.
+
+```typescript
+emitter.oneShot(); // fire and forget
+```
+
+#### `setEmitRate(rate: number): void`
+
+Set the emission rate. In continuous mode (`emitTime === 0`) this is particles per second. In burst mode (`emitTime > 0`) this is the number of particles spawned per burst interval.
+
+#### `setEmitTime(time: number): void`
+
+Set the burst interval in seconds. Pass `0` (the default) for continuous emission. Pass any positive value to switch to burst mode — the emitter will spawn `emitRate` particles every `time` seconds.
+
+#### `setTexture(texture: Texture): void`
+
+Replace the texture used for newly spawned particles at runtime. Already-live particles keep their assigned texture.
+
+---
+
+### Methods — Update & Render
+
+Call both methods every frame, in order.
+
+#### `update(deltaTime: number): void`
+
+Advance the particle simulation. Handles emission timing, per-particle attribute interpolation (delta, damping), velocity/acceleration integration, and lifetime expiry.
+
+<ParamField path="deltaTime" type="number" required>
+  Elapsed time in seconds since the last frame.
+</ParamField>
+
+#### `render(): void`
+
+Draw all live particles. In `localSpace` mode the emitter's `position` is pushed onto the matrix stack around the batch, so all particles move with the emitter automatically.
+
+<Tip>
+  Always call `update()` before `render()` in the same frame to keep positions and visuals in sync.
+</Tip>
+
+---
+
+### Methods — Queries
+
+#### `getParticleCount(): number`
+
+Returns the number of currently live particles.
+
+#### `isActive(): boolean`
+
+Returns `true` if the emitter is currently emitting **or** if there are still live particles winding down. Useful for knowing when a one-shot effect has fully completed.
+
+```typescript
+if (!emitter.isActive()) {
+  // Safe to destroy or reuse the emitter
+}
+```
+
+---
+
+## IParticleOptions
+
+Configuration object passed to the `ParticleEmitter` constructor.
+
+<ParamField path="texture" type="Texture | Texture[] | [Texture, number][]" required>
+  The texture (or textures) to use for particles.
+
+  - A single `Texture` — every particle uses it.
+  - `Texture[]` — one texture is chosen at random (uniform probability) for each particle.
+  - `[Texture, number][]` — weighted random: each tuple is `[texture, weight]`; higher weights are picked more often.
+</ParamField>
+
+<ParamField path="life" type="number | [number, number]" required>
+  Particle lifetime in seconds. Pass a plain number for a fixed lifetime, or a `[min, max]` tuple to sample each particle's lifetime randomly within the range.
+</ParamField>
+
+<ParamField path="animation" type="IParticleAnimation" required>
+  Per-attribute animation configuration. See [IParticleAnimation](#iparticleanimation).
+</ParamField>
+
+<ParamField path="emitShape" type="ParticleShape">
+  Controls the spawn area. Defaults to `ParticleShape.POINT`. See [ParticleShape](#particleshape).
+</ParamField>
+
+<ParamField path="emitRadius" type="number">
+  Radius of the spawn circle when `emitShape` is `ParticleShape.CIRCLE`. Particles are distributed uniformly across the disc (not just the circumference).
+</ParamField>
+
+<ParamField path="emitRect" type="{ width: number; height: number }">
+  Dimensions of the spawn rectangle when `emitShape` is `ParticleShape.RECT`. Particles are spawned at a uniformly random point within `width × height` centered on the emitter position.
+</ParamField>
+
+<ParamField path="maxParticles" type="number">
+  Hard cap on the number of simultaneously live particles. When the pool is full, `emit()` calls are silently clamped. Omit for no limit.
+</ParamField>
+
+<ParamField path="emitRate" type="number">
+  Particles emitted per second in continuous mode, or particles emitted per burst interval when `emitTime > 0`. Defaults to `10`.
+</ParamField>
+
+<ParamField path="emitTime" type="number">
+  If greater than `0`, the emitter operates in burst mode and spawns `emitRate` particles every `emitTime` seconds. Defaults to `0` (continuous).
+</ParamField>
+
+<ParamField path="localSpace" type="boolean">
+  Whether particles are positioned relative to the emitter. Defaults to `true`. Set to `false` for effects that should remain fixed in the world after the emitter moves (e.g., exhaust trails).
+</ParamField>
+
+<ParamField path="position" type="Vec2">
+  Initial world-space position of the emitter. This value is also readable/writable directly on the `ParticleEmitter` instance after construction.
+</ParamField>
+
+<ParamField path="origin" type="Vec2">
+  Sprite pivot point for each particle, expressed as a fraction of the texture size. `(0.5, 0.5)` (the default) centers the sprite on the particle position. `(0, 0)` places the top-left corner at the position.
+</ParamField>
+
+---
+
+## IParticleAnimation
+
+Describes how each visual attribute changes over a particle's lifetime. Every field accepts either a plain value (constant throughout the lifetime) or a `ParticleAttribute<T>` object (animated).
+
+<ParamField path="speed" type="ParticleAttribute<number> | number">
+  Forward speed along the particle's rotation axis, in pixels per second. A rotation of `0` points right. Combine with `rotation` to fire particles in any direction.
+</ParamField>
+
+<ParamField path="rotation" type="ParticleAttribute<number> | number">
+  Particle rotation angle in radians. Used both to orient the sprite and as the direction of `speed` travel.
+</ParamField>
+
+<ParamField path="scale" type="ParticleAttribute<number> | number">
+  Uniform scale applied to the particle sprite. `1.0` is the texture's native size.
+</ParamField>
+
+<ParamField path="color" type="ParticleAttribute<Color> | Color">
+  Tint color with RGBA components in the 0–255 range. Interpolates each channel independently. Set the `end` alpha to `0` to fade particles out cleanly.
+</ParamField>
+
+<ParamField path="velocity" type="ParticleAttribute<Vec2> | Vec2">
+  Additive velocity vector in pixels per second. Applied on top of speed. Use this for wind-like drift or to offset movement in a fixed world direction.
+</ParamField>
+
+<ParamField path="acceleration" type="ParticleAttribute<Vec2> | Vec2">
+  Acceleration added to `velocity` each second (pixels per second²). Use `new Vec2(0, 98)` for gravity.
+</ParamField>
+
+---
+
+## ParticleAttribute\<T\>
+
+Describes an animated value for a single particle attribute. `T` may be `number`, `Vec2`, or `Color`.
+
+<ParamField path="start" type="T | [T, T]">
+  The attribute's value at the start of the particle's life. Pass a plain value for a fixed start, or a `[min, max]` tuple to randomise each particle's starting value within the range.
+</ParamField>
+
+<ParamField path="end" type="T | [T, T]">
+  The attribute's value at the end of the particle's life. Accepts the same plain-value or range forms as `start`. When omitted, defaults to the resolved `start` value — meaning the attribute stays constant.
+</ParamField>
+
+<ParamField path="damping" type="number">
+  Multiplicative factor applied to the attribute once per second. For example, `0.9` multiplies the current value by `0.9^deltaTime` each frame, producing exponential decay. Damping is applied in addition to the linear `start`→`end` interpolation.
+</ParamField>
+
+<ParamField path="delta" type="T">
+  Explicit per-second change override. If provided, this value is added (or component-wise added for `Vec2`/`Color`) to the attribute every second instead of the automatically derived linear delta. Useful when you want precise control over the rate of change without specifying an end value.
+</ParamField>
+
+The emitter automatically computes the per-frame linear delta from `(end − start) / lifetime` when `delta` is omitted, so in most cases only `start` and `end` need to be set.
+
+<Note>
+  Range sampling (`[min, max]`) is evaluated once per particle at spawn time — every particle gets its own fixed delta computed from its sampled start and end values.
+</Note>
+
+---
+
+## ParticleShape
+
+Enum that controls the spawn area of the emitter.
+
+| Value | String key | Description |
+|-------|------------|-------------|
+| `ParticleShape.POINT` | `"point"` | All particles spawn at the emitter's position (default). |
+| `ParticleShape.CIRCLE` | `"circle"` | Particles spawn at a uniformly random point within a disc of radius `emitRadius`. |
+| `ParticleShape.RECT` | `"rect"` | Particles spawn at a uniformly random point within a rectangle of `emitRect.width × emitRect.height`, centered on the emitter. |
+
+---
+
+## Full Example
+
+```typescript
+import { ParticleEmitter, ParticleShape, Color, Vec2 } from "rapid-render";
+
+const emitter = new ParticleEmitter(rapid, {
+  texture: sparkTexture,
+  life: [0.4, 1.2],
+  emitRate: 40,
+  maxParticles: 200,
+  emitShape: ParticleShape.CIRCLE,
+  emitRadius: 20,
+  animation: {
+    speed: { start: [60, 120], end: 0 },
+    rotation: { start: 0, end: [Math.PI * 2, Math.PI * 6] },
+    scale:    { start: [0.8, 1.2], end: 0 },
+    color: {
+      start: new Color(255, 220, 80, 255),
+      end:   new Color(255, 60, 0, 0),
+    },
+    velocity: new Vec2(0, -20),
+    acceleration: new Vec2(0, 30),
+  },
+});
+
+emitter.position = new Vec2(400, 300);
+emitter.start();
+
+function loop(dt: number) {
+  rapid.clear();
+  emitter.update(dt);
+  emitter.render();
+  rapid.flush();
+}
+```
+
+The example above creates a fire-like spark emitter centred at `(400, 300)`:
+
+- Each particle lives between 0.4 and 1.2 seconds.
+- Speed decelerates from a random 60–120 px/s down to 0.
+- Rotation spins by a random amount (1–3 full turns) over the lifetime.
+- Scale shrinks from ~1× to 0, making sparks vanish as they die.
+- Color fades from bright yellow-orange to transparent red.
+- A slight upward drift (`velocity`) and downward pull (`acceleration`) add natural arc motion.
+
+<Tip>
+  For a one-off burst effect (explosion, impact flash) call `emitter.oneShot()` instead of `emitter.start()`. Poll `emitter.isActive()` to know when all particles have expired so you can clean up the emitter.
+</Tip>

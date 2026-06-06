@@ -1,0 +1,292 @@
+---
+title: "Drawing Primitives: Rects, Circles, Lines, and Polygons"
+sidebarTitle: "Graphics"
+description: "Draw filled rectangles, circles, anti-aliased lines, and arbitrary polygon meshes using Rapid.js graphics primitives and the vertex API."
+---
+
+Rapid.js provides a set of geometry drawing functions for shapes that don't require a pre-loaded image: filled rectangles, filled circles, multi-point lines with mitered joints, and arbitrary polygon meshes assembled from raw vertices. Unlike sprites, graphics geometry is uploaded to the GPU fresh each frame — making them best suited for dynamic or procedural shapes rather than large quantities of identical objects.
+
+All graphics functions share the same `ITransformOptions` fields as `drawSprite` (`x`, `y`, `rotation`, `scale`, `origin`, `offset`, `offsetX`, `offsetY`, `saveTransform`). Refer to the [Sprites guide](/guide/sprites) for a full description of those fields.
+
+---
+
+## drawRect
+
+`drawRect` renders a filled axis-aligned rectangle. Pass a `color` for a solid fill, a `texture` to map an image onto the quad, or both to tint the texture.
+
+### IRectOptions
+
+<ParamField path="width" type="number" required>
+  Width of the rectangle in logical pixels.
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  Height of the rectangle in logical pixels.
+</ParamField>
+
+<ParamField path="color" type="Color">
+  Fill color. Defaults to opaque white when a texture is provided, or renders as a white rectangle if neither color nor texture is set.
+</ParamField>
+
+<ParamField path="texture" type="Texture">
+  An optional texture applied to the rectangle quad. UVs span the full `[0, 1]` range across the width and height.
+</ParamField>
+
+### Examples
+
+```typescript
+// Solid color rectangle
+rapid.drawRect({
+  x: 50,
+  y: 50,
+  width: 200,
+  height: 100,
+  color: Color.fromHex("#ff4444"),
+});
+
+// Textured rectangle
+rapid.drawRect({
+  x: 50,
+  y: 200,
+  width: 200,
+  height: 100,
+  texture: myTexture,
+});
+
+// Tinted textured rectangle
+rapid.drawRect({
+  x: 50,
+  y: 350,
+  width: 200,
+  height: 100,
+  texture: myTexture,
+  color: new Color(128, 200, 255, 180),
+});
+```
+
+<Tip>
+  `drawRect` internally uses `TRIANGLE_FAN` with four vertices and `addRectVertex`, so it is as lightweight as a manual quad. Prefer it over `drawGraphic` for simple rectangles.
+</Tip>
+
+---
+
+## drawCircle
+
+`drawCircle` renders a filled circle approximated by a fan of triangles radiating from the center.
+
+### ICircleOptions
+
+<ParamField path="radius" type="number" required>
+  Radius of the circle in logical pixels.
+</ParamField>
+
+<ParamField path="color" type="Color">
+  Fill color. Defaults to opaque white.
+</ParamField>
+
+<ParamField path="segments" type="number">
+  Number of triangle slices used to approximate the circle. Higher values give a smoother edge at the cost of more vertices. Defaults to `32`.
+</ParamField>
+
+### Example
+
+```typescript
+rapid.drawCircle({
+  x: 300,
+  y: 200,
+  radius: 50,
+  color: Color.Blue,
+  segments: 64, // smoother circle
+});
+```
+
+<Note>
+  The center vertex is always placed at the origin `(0, 0)` in local space, so `origin` and `offset` interact with the circle the same way they do with sprites.
+</Note>
+
+---
+
+## drawLine
+
+`drawLine` renders a polyline as a triangle strip with proper miter joints at every bend. Caps can optionally be rounded, and the path can be closed into a polygon outline.
+
+### ILineOptions
+
+`ILineOptions` extends `ILineRenderOptions` from the line module and `IDrawOptions`.
+
+<ParamField path="points" type="Vec2[] | {x: number, y: number}[]" required>
+  The ordered list of vertices that define the path. At least two points are required.
+</ParamField>
+
+<ParamField path="width" type="number">
+  Stroke width in logical pixels. Defaults to `1`.
+</ParamField>
+
+<ParamField path="color" type="Color">
+  Line color. Defaults to opaque white.
+</ParamField>
+
+<ParamField path="closed" type="boolean">
+  When `true`, the last point is connected back to the first, closing the loop. Defaults to `false`.
+</ParamField>
+
+<ParamField path="roundCap" type="boolean">
+  When `true`, semicircular caps are added at the start and end of an open line. Has no effect on closed paths. Defaults to `false`.
+</ParamField>
+
+<ParamField path="texture" type="Texture">
+  An optional texture applied along the line. The UV mapping along the line axis is controlled by `textureMode`.
+</ParamField>
+
+<ParamField path="textureMode" type="LineTextureMode">
+  Controls how the texture is mapped along the line's length.
+  - `LineTextureMode.STRETCH` — stretches the texture once from start to end (default).
+  - `LineTextureMode.REPEAT` — tiles the texture based on the texture's pixel width.
+</ParamField>
+
+### Example
+
+```typescript
+rapid.drawLine({
+  points: [
+    { x: 100, y: 100 },
+    { x: 300, y: 100 },
+    { x: 300, y: 300 },
+  ],
+  width: 3,
+  color: Color.Yellow,
+  closed: false,
+});
+
+// Closed polygon outline with round caps disabled
+rapid.drawLine({
+  points: [
+    { x: 200, y: 50 },
+    { x: 350, y: 200 },
+    { x: 200, y: 350 },
+    { x: 50,  y: 200 },
+  ],
+  width: 2,
+  color: Color.Cyan,
+  closed: true,
+});
+```
+
+<Tip>
+  For very short segments at sharp angles, the miter length is capped internally at `4×` the half-width to prevent extreme spikes. If you need perfectly sharp corners, compose the line from multiple straight segments.
+</Tip>
+
+---
+
+## Custom Polygons — the Vertex API
+
+For full control over geometry you can drive the `GraphicRegion` directly using the low-level vertex API: `startGraphic` → `addGraphicVertex` / `addRectVertex` / `addCircleVertex` → `endGraphic`.
+
+### High-level: drawGraphic
+
+`drawGraphic` is a convenience wrapper that accepts a `points` array and takes care of the start/end bookkeeping for you.
+
+**IGraphicOptions**
+
+<ParamField path="points" type="DrawPoint[]" required>
+  Array of `Vec2` or `{x, y}` objects defining the vertices.
+</ParamField>
+
+<ParamField path="color" type="Color | Color[]">
+  A single color applied to all vertices, or a per-vertex color array (must have the same length as `points`). Defaults to opaque white.
+</ParamField>
+
+<ParamField path="drawMode" type="number">
+  A WebGL draw mode constant such as `gl.TRIANGLES`, `gl.TRIANGLE_FAN`, or `gl.TRIANGLE_STRIP`. Defaults to `gl.TRIANGLES`.
+</ParamField>
+
+<ParamField path="uv" type="DrawPoint[]">
+  Optional per-vertex UV coordinates in the `[0, 1]` range. Must have the same length as `points`. Defaults to `(0, 0)` for all vertices.
+</ParamField>
+
+<ParamField path="texture" type="Texture">
+  An optional texture to sample using the `uv` coordinates.
+</ParamField>
+
+```typescript
+// Filled triangle
+rapid.drawGraphic({
+  points: [
+    { x: 0,   y: 0  },
+    { x: 100, y: 0  },
+    { x: 50,  y: 86 },
+  ],
+  color: Color.Green,
+  drawMode: rapid.gl.TRIANGLES,
+});
+
+// Per-vertex color gradient triangle
+rapid.drawGraphic({
+  points: [
+    { x: 0,   y: 0  },
+    { x: 100, y: 0  },
+    { x: 50,  y: 86 },
+  ],
+  color: [Color.Red, Color.Green, Color.Blue],
+  drawMode: rapid.gl.TRIANGLES,
+});
+```
+
+### Low-level: startGraphic / addGraphicVertex / endGraphic
+
+For procedural geometry — particles, dynamic meshes, or shapes built at runtime — you can push vertices one by one between `startGraphic` and `endGraphic`.
+
+```typescript
+rapid.startGraphic(rapid.gl.TRIANGLE_FAN);
+rapid.addGraphicVertex(0,   0,   0,   0);    // center
+rapid.addGraphicVertex(100, 0,   1,   0);
+rapid.addGraphicVertex(100, 80,  1,   1);
+rapid.addGraphicVertex(0,   80,  0,   1);
+rapid.endGraphic();
+```
+
+**`startGraphic(drawMode, texture?, customShader?, customMatrix?)`**
+
+Enters the graphics region and begins a new primitive batch. Call this once before pushing vertices.
+
+**`addGraphicVertex(x, y, u?, v?, color?)`**
+
+Appends a single vertex. `u` and `v` are UV coordinates (default `0`). `color` is a packed `uint32` — use `rapid.getColorUint32(myColor)` or pass `0xFFFFFFFF` for white.
+
+**`endGraphic()`**
+
+Closes the current batch and marks it ready for the GPU flush.
+
+### Shorthand vertex helpers
+
+Two helpers produce common shapes without manual vertex arithmetic:
+
+**`addRectVertex(w, h, color?)`**
+
+Pushes four vertices for a rectangle of size `w × h`. Intended for use inside a `TRIANGLE_FAN` batch (which needs exactly 4 vertices for a quad):
+
+```typescript
+rapid.startGraphic(rapid.gl.TRIANGLE_FAN, myTexture);
+rapid.addRectVertex(256, 256, Color.fromHex("#8888ff"));
+rapid.endGraphic();
+```
+
+**`addCircleVertex(r, color?, segments?)`**
+
+Pushes `segments` vertices (default 32) arranged around a circle of radius `r`. Intended for use inside a `TRIANGLE_FAN` batch together with a center vertex, exactly as `drawCircle` does internally:
+
+```typescript
+rapid.startGraphic(rapid.gl.TRIANGLE_FAN);
+rapid.addGraphicVertex(0, 0, 0.5, 0.5, 0xFFFFFFFF); // center
+rapid.addCircleVertex(60, Color.Orange, 48);
+rapid.addGraphicVertex(60, 0, 1, 0.5, 0xFFFFFFFF);  // close the fan
+rapid.endGraphic();
+```
+
+<Note>
+  `TRIANGLE_FAN` is the most efficient draw mode for convex polygons. Each new vertex shares an edge with the fan's origin (first vertex) and the previous vertex, so an N-vertex fan draws N-2 triangles. Use `TRIANGLES` when you need non-convex shapes by supplying explicit triangle triplets.
+</Note>
+
+<Warning>
+  Always pair every `startGraphic` call with exactly one `endGraphic`. Forgetting `endGraphic` will leave the region in an open state and corrupt subsequent draw calls.
+</Warning>

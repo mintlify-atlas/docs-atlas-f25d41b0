@@ -1,0 +1,225 @@
+---
+title: "TextTexture — GPU-Accelerated Text Rendering"
+sidebarTitle: "TextTexture"
+description: "API reference for TextTexture: create styled text, update text and style at runtime, and control alignment, baseline, fonts, fill, stroke, and multi-line layout."
+---
+
+`TextTexture` extends `Texture` and bridges the HTML5 Canvas 2D text rendering API with the WebGL pipeline. Each instance maintains an internal `HTMLCanvasElement`, measures and draws the current text with the configured style, then uploads the result as a WebGL texture. The canvas is sized at device-pixel-ratio resolution and the `Texture.scale` property is set to `1 / dpr`, so text appears crisp on high-DPR screens without any extra work.
+
+<Note>
+  Both the `text` and `style` setters automatically re-render the canvas and
+  re-upload to the GPU. You do not need to call `update()` manually in most
+  cases.
+</Note>
+
+---
+
+## Creating a TextTexture
+
+Use `rapid.texture.createTextTexture()` rather than constructing the class directly.
+
+```typescript
+const label = rapid.texture.createTextTexture({
+  text: "Score: 0",
+  fontFamily: "Arial",
+  fontSize: 32,
+  fontWeight: "bold",
+  fill: "#ffffff",
+  stroke: "#000000",
+  strokeThickness: 2,
+  align: "left",
+  baseline: "top",
+});
+```
+
+---
+
+## ITextStyle
+
+All style fields are optional. Unset fields fall back to their default values.
+
+<ParamField path="fontFamily" type="string" default='"Arial"'>
+  CSS font family name. Any font available in the browser can be used, including
+  web fonts loaded with `@font-face` — as long as the font has finished loading
+  before the `TextTexture` is first rendered.
+</ParamField>
+
+<ParamField path="fontSize" type="number" default="24">
+  Font size in logical CSS pixels. The internal canvas scales this by `dpr` so
+  the rendered pixels are always sharp.
+</ParamField>
+
+<ParamField path="fontWeight" type="string" default='"normal"'>
+  CSS font weight string, e.g. `"normal"`, `"bold"`, `"700"`.
+</ParamField>
+
+<ParamField path="fill" type="string | CanvasGradient | CanvasPattern">
+  Text fill color or style. Accepts any value valid as a Canvas 2D
+  `fillStyle` — a CSS color string, a `CanvasGradient`, or a `CanvasPattern`.
+  When omitted the text interior is not filled.
+</ParamField>
+
+<ParamField path="stroke" type="string | CanvasGradient | CanvasPattern">
+  Text outline color or style. Accepts the same types as `fill`. Has no visual
+  effect if `strokeThickness` is `0`.
+</ParamField>
+
+<ParamField path="strokeThickness" type="number" default="1">
+  Width of the outline stroke in logical CSS pixels. The outline is rendered
+  before the fill so it appears behind the filled text. Set to `0` to disable.
+</ParamField>
+
+<ParamField path="align" type='"left" | "center" | "right"' default='"left"'>
+  Horizontal alignment anchor. Affects `offsetX` on the texture:
+
+  | Value | `offsetX` | Effect |
+  |---|---|---|
+  | `"left"` | `0` | Draw position is the left edge of the text. |
+  | `"center"` | `-width / 2` | Draw position is the horizontal center. |
+  | `"right"` | `-width` | Draw position is the right edge. |
+</ParamField>
+
+<ParamField path="baseline" type="CanvasTextBaseline" default='"top"'>
+  Vertical alignment anchor. Affects `offsetY` on the texture. The most useful
+  values are:
+
+  | Value | `offsetY` | Effect |
+  |---|---|---|
+  | `"top"` | `0` | Draw position is the top of the text. |
+  | `"middle"` | `-height / 2` | Draw position is the vertical center. |
+  | `"bottom"` | `-height` | Draw position is the bottom. |
+
+  Other `CanvasTextBaseline` values (`"alphabetic"`, `"hanging"`,
+  `"ideographic"`) map to `offsetY = 0`.
+</ParamField>
+
+---
+
+## Properties
+
+### `text` *(getter / setter)*
+
+The current text string displayed by this texture.
+
+```typescript
+// Read
+console.log(label.text); // "Score: 0"
+
+// Write — re-uploads texture automatically
+label.text = "Score: 100";
+```
+
+Setting the same string again is a no-op (the setter checks for equality before
+triggering a re-upload).
+
+---
+
+### `style` *(getter / setter)*
+
+The current `ITextStyle` configuration. The setter performs a **partial
+merge** — only the properties you supply are changed; all others retain their
+current values. The texture is re-uploaded after every set.
+
+```typescript
+// Read the full style
+const currentStyle = label.style;
+
+// Partial update — only fontSize and fill change
+label.style = { fontSize: 40, fill: "#ffd700" };
+```
+
+---
+
+## Methods
+
+### `update()`
+
+Manually re-renders the internal canvas and re-uploads the texture to the GPU.
+You only need to call this if you have bypassed the `text`/`style` setters and
+mutated internal state directly.
+
+```typescript
+label.update();
+```
+
+**Returns:** `void`
+
+---
+
+## Alignment and offset Behaviour
+
+`TextTexture` uses `offsetX` and `offsetY` on the base `Texture` class to shift
+the draw position without requiring you to adjust the coordinates you pass to
+`drawSprite()`. The offsets are recomputed every time `update()` runs.
+
+```typescript
+// Centered text — draw at the center of the screen
+const centered = rapid.texture.createTextTexture({
+  text: "Game Over",
+  fontSize: 48,
+  fill: "#ffffff",
+  align: "center",
+  baseline: "middle",
+});
+// The texture draws centered on (400, 300)
+rapid.drawSprite({ texture: centered, x: 400, y: 300 });
+```
+
+<Tip>
+  Combine `align: "center"` with `baseline: "middle"` when you want a label to
+  be exactly centred on a world position — the offsets cancel out the natural
+  top-left anchor without any manual math on your end.
+</Tip>
+
+---
+
+## Drawing
+
+`TextTexture` is a `Texture` subclass and can be passed directly to any Rapid.js
+draw call.
+
+```typescript
+rapid.drawSprite({ texture: label, x: 400, y: 300 });
+```
+
+---
+
+## Live Updates
+
+```typescript
+// Text setter — re-uploads texture automatically
+label.text = `Score: ${score}`;
+
+// Style setter — partial update, re-uploads
+label.style = { fill: "#ffd700", fontSize: 36 };
+```
+
+---
+
+## Multi-line Text
+
+Split text across multiple lines with the `\n` newline character. Line height
+and gap are measured using Canvas 2D `fontBoundingBoxAscent` and
+`fontBoundingBoxDescent` so spacing matches the actual font metrics.
+
+```typescript
+const info = rapid.texture.createTextTexture({
+  text: "Level 1\nCollect all gems",
+  fontSize: 20,
+  fill: "#ffffff",
+});
+
+rapid.drawSprite({ texture: info, x: 20, y: 20 });
+```
+
+---
+
+## Destroying a TextTexture
+
+`TextTexture` inherits `destroy()` from `Texture`. Call it when the label is no
+longer needed to release the GPU texture and decrement the `BaseTexture`
+reference count.
+
+```typescript
+label.destroy();
+```

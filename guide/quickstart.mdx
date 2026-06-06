@@ -1,0 +1,210 @@
+---
+title: "Get Started with Rapid.js in 5 Minutes"
+sidebarTitle: "Quickstart"
+description: "Build a working Rapid.js game loop from scratch. Load a texture, draw a sprite with transforms, and render text to a canvas in under 5 minutes."
+---
+
+This guide walks you from a blank HTML file to a fully working Rapid.js game loop. By the end you will have a canvas rendering a rotating sprite and a live text label — the foundation every Rapid.js project builds on.
+
+<Steps>
+
+### Create the HTML File
+
+Create an `index.html` with a single `<canvas>` element. Give it a fixed size and an `id` so your script can find it.
+
+```html index.html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Rapid.js Game</title>
+    <style>
+      body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas" width="800" height="600"></canvas>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
+```
+
+### Initialize Rapid
+
+In `main.ts`, import `Rapid`, create the instance, and point it at the canvas. Pass `logicWidth` and `logicHeight` to establish the coordinate space your draw calls will use.
+
+```typescript main.ts
+import { Rapid, Color, TextureFilterMode } from "rapid-render";
+
+const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+
+const rapid = new Rapid({
+  canvas,
+  logicWidth: 800,
+  logicHeight: 600,
+  backgroundColor: Color.fromHex("#1a1a2e"),
+  textureFilter: TextureFilterMode.NEAREST,
+});
+```
+
+`TextureFilterMode.NEAREST` keeps textures crisp at any scale — ideal for pixel art. Switch to `TextureFilterMode.LINEAR` for smooth, anti-aliased scaling.
+
+### Load a Texture
+
+Use `rapid.texture.load()` to fetch an image from a URL and upload it to the GPU. The method returns a `Promise<Texture>`, so `await` it before entering the game loop.
+
+```typescript main.ts
+// Load a texture from a URL (resolves once uploaded to GPU)
+const heroTexture = await rapid.texture.load("/hero.png");
+```
+
+`rapid.texture` is the `TextureManager` instance. It handles image fetching, WebGL texture creation, and optional per-texture filter overrides.
+
+### Build the Game Loop
+
+The core of every Rapid.js game is a `requestAnimationFrame` loop that calls `rapid.clear()`, issues draw calls, then calls `rapid.flush()`.
+
+```typescript main.ts
+let angle = 0;
+let lastTime = performance.now();
+
+function loop(now: number) {
+  const dt = (now - lastTime) / 1000; // delta time in seconds
+  lastTime = now;
+  angle += dt; // advance rotation by one radian per second
+
+  // 1. Clear the framebuffer and reset the matrix stack
+  rapid.clear();
+
+  // 2. Draw a sprite at the center of the canvas
+  rapid.drawSprite({
+    texture: heroTexture,
+    x: 400,
+    y: 300,
+  });
+
+  // 3. Flush any remaining batched draw calls to the GPU
+  rapid.flush();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+```
+
+<Tip>
+  Call `rapid.flush()` at the end of every frame to submit any batched draw calls that haven't been dispatched yet. Forgetting it means the last batch of sprites in your frame will not appear on screen.
+</Tip>
+
+### Add Transforms
+
+Every draw call accepts inline transform options. You can set `x`, `y`, `rotation`, `scale`, and `origin` directly on the options object — no separate transform step needed.
+
+```typescript main.ts
+rapid.drawSprite({
+  texture: heroTexture,
+  x: 400,           // horizontal position in logical pixels
+  y: 300,           // vertical position in logical pixels
+  rotation: angle,  // rotation in radians
+  scale: 1.5,       // uniform scale (or pass a Vec2 for non-uniform)
+  origin: 0.5,      // pivot at center: 0 = top-left, 0.5 = center, 1 = bottom-right
+});
+```
+
+<Note>
+  Transform options — `x`, `y`, `rotation`, `scale`, `origin`, `offsetX`, and `offsetY` — are available on every draw call, including `drawRect()`, `drawCircle()`, and `drawLine()`. They all flow through the same `ITransformOptions` interface. See the [Transforms guide](/guide/transforms) for the full reference.
+</Note>
+
+### Draw Text with TextTexture
+
+`rapid.texture.createTextTexture()` rasterizes a string using an internal HTML Canvas and returns a `TextTexture` — a `Texture` subclass you can pass to any `drawSprite()` call. Update the label at runtime by assigning to its `text` or `style` properties.
+
+```typescript main.ts
+// Create a text label (rasterized on the CPU, uploaded to GPU)
+const label = rapid.texture.createTextTexture({
+  text: "Score: 0",
+  fontSize: 24,
+  fontFamily: "Arial, sans-serif",
+  fill: "#ffffff",
+  baseline: "top",
+});
+
+// Later, update the text at runtime without creating a new texture:
+// label.text = `Score: ${score}`;
+
+// Draw the label in the top-left corner
+rapid.drawSprite({ texture: label, x: 16, y: 16 });
+```
+
+</Steps>
+
+## Complete Example
+
+Here is the full annotated game loop, combining every step above into a single runnable file.
+
+```typescript main.ts
+import { Rapid, Color, TextureFilterMode } from "rapid-render";
+
+// ── 1. Set up the renderer ────────────────────────────────────────────────────
+const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+
+const rapid = new Rapid({
+  canvas,
+  logicWidth: 800,
+  logicHeight: 600,
+  backgroundColor: Color.fromHex("#1a1a2e"),
+  textureFilter: TextureFilterMode.NEAREST,
+});
+
+// ── 2. Load assets (async — must complete before the loop starts) ─────────────
+const heroTexture = await rapid.texture.load("/hero.png");
+
+// ── 3. Create a text label ───────────────────────────────────────────────────
+const label = rapid.texture.createTextTexture({
+  text: "Score: 0",
+  fontSize: 24,
+  fontFamily: "Arial, sans-serif",
+  fill: "#ffffff",
+  baseline: "top",
+});
+
+// ── 4. Game loop ──────────────────────────────────────────────────────────────
+let angle = 0;
+let lastTime = performance.now();
+
+function loop(now: number) {
+  const dt = (now - lastTime) / 1000; // seconds since last frame
+  lastTime = now;
+  angle += dt; // rotate one full turn per ~6.28 seconds
+
+  // Clear framebuffer and reset matrix stack
+  rapid.clear();
+
+  // Draw a sprite at canvas center with continuous rotation
+  rapid.drawSprite({
+    texture: heroTexture,
+    x: 400,
+    y: 300,
+    rotation: angle,
+    origin: 0.5,   // pivot at the sprite's center
+  });
+
+  // Draw the score label pinned to the top-left corner
+  rapid.drawSprite({ texture: label, x: 16, y: 16 });
+
+  // Submit all batched draw calls to the GPU
+  rapid.flush();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+```
+
+## What's Next?
+
+- **[Transforms](/guide/transforms)** — hierarchical transforms, `withTransform()`, and the matrix stack API.
+- **[Textures & Sprites](/guide/sprites)** — sprite regions, atlas textures, flip, tint, and padding.
+- **[Render Textures](/guide/render-textures)** — offscreen rendering and multi-pass filter chains.
+- **[Custom Shaders](/guide/shaders)** — writing GLSL and attaching `CustomGlShader` to draw calls.

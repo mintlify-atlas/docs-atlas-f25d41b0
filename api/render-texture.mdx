@@ -1,0 +1,279 @@
+---
+title: "RenderTexture — Offscreen Framebuffer API"
+sidebarTitle: "RenderTexture"
+description: "API reference for RenderTexture: resize, activate, clear, pixel read-back, and using a RenderTexture as a drawable Texture in Rapid.js."
+---
+
+`RenderTexture` extends `Texture` and wraps a WebGL framebuffer together with a stencil renderbuffer. You can draw anything into it using `rapid.drawToRenderTexture()`, and then use the `RenderTexture` itself as the `texture` argument of any subsequent draw call — exactly like any other `Texture`. This makes `RenderTexture` the foundation for post-processing effects, off-screen compositing, dynamic shadows, and render-to-texture workflows.
+
+<Note>
+  `RenderTexture` sets `flipY = true` automatically, compensating for WebGL's
+  bottom-left framebuffer origin so the image appears right-side-up when drawn
+  back to the screen.
+</Note>
+
+---
+
+## Creating a RenderTexture
+
+Use `rapid.texture.createRenderTexture()` rather than constructing the class directly.
+
+```typescript
+const rt = rapid.texture.createRenderTexture({
+  width: 512,
+  height: 512,
+  clearColor: Color.Transparent,
+});
+```
+
+---
+
+## IRenderTextureOptions
+
+<ParamField path="width" type="number" required>
+  Logical width of the render target in pixels. Must be at least `1`. The value
+  is rounded to the nearest integer.
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  Logical height of the render target in pixels. Must be at least `1`. The value
+  is rounded to the nearest integer.
+</ParamField>
+
+<ParamField path="clearColor" type="Color" default="Color.Black">
+  Color used by `activate(true)` and `clear()` when no explicit color is passed.
+  Set to `Color.Transparent` (or a `Color` with `a = 0`) to clear to fully
+  transparent.
+</ParamField>
+
+<ParamField path="textureFilter" type="TextureFilterMode">
+  Minification / magnification filter for the backing texture.
+
+  | Value | Description |
+  |---|---|
+  | `TextureFilterMode.NEAREST` | Pixel-perfect, no blending. Default. |
+  | `TextureFilterMode.LINEAR` | Bilinear interpolation — smoother at scale. |
+</ParamField>
+
+<ParamField path="wrap" type="TextureWrapMode">
+  UV wrap mode for the backing texture. Defaults to `CLAMP`.
+</ParamField>
+
+<ParamField path="premultipliedAlpha" type="boolean">
+  Whether the texture is treated as premultiplied-alpha. Passed through to the
+  underlying `ITextureOptions`.
+</ParamField>
+
+---
+
+## Methods
+
+### `resize(width, height, force?)`
+
+Updates the logical dimensions of the render target. GPU memory is allocated
+using a **grow-only** strategy: the framebuffer is only reallocated when the
+requested size exceeds the current GPU allocation. Shrinking simply updates the
+logical size and UV sub-region — no GPU work is performed.
+
+This makes it safe to call `resize()` frequently (even every frame) with
+varying sizes without causing GPU allocation churn.
+
+```typescript
+// Grow to match the window on resize
+rt.resize(window.innerWidth, window.innerHeight);
+```
+
+**Parameters**
+
+<ParamField path="width" type="number" required>
+  New logical width in pixels.
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  New logical height in pixels.
+</ParamField>
+
+<ParamField path="force" type="boolean" default="false">
+  When `true`, forces a full GPU reallocation regardless of whether the current
+  allocation is already large enough.
+</ParamField>
+
+**Returns:** `void`
+
+---
+
+### `activate(clear?)`
+
+Binds this `RenderTexture` as the current WebGL framebuffer and sets the
+viewport to the logical dimensions. All subsequent draw calls will target this
+texture until `deactivate()` is called.
+
+```typescript
+rt.activate(true); // bind + clear in one step
+rapid.drawSprite({ texture: backgroundTex, x: 0, y: 0 });
+rt.deactivate();
+```
+
+**Parameters**
+
+<ParamField path="clear" type="boolean" default="false">
+  When `true`, immediately clears the framebuffer using the `clearColor`
+  configured at construction time.
+</ParamField>
+
+**Returns:** `void`
+
+---
+
+### `clear(clearColor?)`
+
+Clears the currently bound framebuffer. The framebuffer must already be bound
+(e.g. after calling `activate()`) before calling this method.
+
+```typescript
+rt.activate();
+rt.clear(new Color(0, 0, 0, 0)); // clear to transparent
+```
+
+**Parameters**
+
+<ParamField path="clearColor" type="Color">
+  Override color for this clear operation. Falls back to the `clearColor` set
+  at construction if omitted.
+</ParamField>
+
+**Returns:** `void`
+
+---
+
+### `deactivate()`
+
+Unbinds the framebuffer, returning subsequent draw calls to the default
+(screen) framebuffer.
+
+```typescript
+rt.deactivate();
+```
+
+**Returns:** `void`
+
+---
+
+### `GetPixels(x?, y?, width?, height?)`
+
+Reads raw RGBA pixel data from the render texture back to the CPU. The region
+uses a **top-left origin** coordinate system, matching the logical draw space
+rather than WebGL's bottom-left convention (the conversion is handled
+internally).
+
+<Note>
+  `GetPixels` causes a GPU pipeline flush and a CPU stall while the GPU
+  finishes rendering. Avoid calling it frequently in performance-sensitive code
+  paths (e.g. every frame).
+</Note>
+
+```typescript
+const pixels = rt.GetPixels(0, 0, 64, 64);
+// pixels[0], pixels[1], pixels[2], pixels[3] = R, G, B, A of pixel (0, 0)
+```
+
+**Parameters**
+
+<ParamField path="x" type="number" default="0">
+  Left edge of the read region in logical pixels (top-left origin).
+</ParamField>
+
+<ParamField path="y" type="number" default="0">
+  Top edge of the read region in logical pixels (top-left origin).
+</ParamField>
+
+<ParamField path="width" type="number" default="rawWidth">
+  Width of the read region in pixels. Clamped to the available texture area.
+</ParamField>
+
+<ParamField path="height" type="number" default="rawHeight">
+  Height of the read region in pixels. Clamped to the available texture area.
+</ParamField>
+
+**Returns:** `Uint8Array` — Flat RGBA byte array of length `width × height × 4`.
+Returns an empty array if the coordinates are out of bounds or the framebuffer
+is unavailable.
+
+---
+
+### `GetColorAt(x, y)`
+
+Convenience wrapper around `GetPixels` that reads a single pixel and returns it
+as a `Color` object.
+
+```typescript
+const color = rt.GetColorAt(mouseX, mouseY);
+if (color.a > 0) {
+  console.log("Hit!", color.r, color.g, color.b);
+}
+```
+
+**Parameters**
+
+<ParamField path="x" type="number" required>
+  X coordinate in logical pixel space (top-left origin).
+</ParamField>
+
+<ParamField path="y" type="number" required>
+  Y coordinate in logical pixel space (top-left origin).
+</ParamField>
+
+**Returns:** `Color` — Returns `Color(0, 0, 0, 0)` if out of bounds.
+
+---
+
+### `destroy()`
+
+Deletes the WebGL framebuffer, renderbuffer, and the underlying `BaseTexture`
+GPU resource. After calling `destroy()`, the `RenderTexture` must not be used.
+
+```typescript
+rt.destroy();
+```
+
+**Returns:** `void`
+
+---
+
+## Using a RenderTexture as a Drawable Texture
+
+Once you have rendered content into a `RenderTexture`, pass it as the `texture`
+argument to any Rapid.js draw call just like a regular `Texture`.
+
+```typescript
+// Render the scene into the render texture
+rapid.drawToRenderTexture(rt, () => {
+  rapid.drawSprite({ texture: backgroundTex, x: 0, y: 0 });
+  rapid.drawSprite({ texture: characterTex, x: 100, y: 200 });
+});
+
+// Draw the composited result onto the screen
+rapid.drawSprite({ texture: rt, x: 0, y: 0 });
+```
+
+<Tip>
+  `rapid.drawToRenderTexture()` handles `activate()` and `deactivate()` for
+  you. Use the manual `activate()` / `deactivate()` API only when you need
+  fine-grained control over multiple render targets in a single frame.
+</Tip>
+
+---
+
+## flipY and Coordinate Convention
+
+WebGL framebuffers store pixels with the origin at the bottom-left, opposite to
+the top-left origin that Rapid.js uses for its logical coordinate space.
+`RenderTexture` compensates by setting `flipY = true` on the `Texture` base
+class, which instructs the renderer to flip the UV coordinates vertically when
+the render texture is drawn back to any target. The result is that rendered
+content appears right-side-up.
+
+The same correction applies to `GetPixels` and `GetColorAt` — they translate
+from top-left logical space to WebGL's bottom-left space before calling
+`gl.readPixels`, so you always work in the same coordinate system regardless of
+the underlying GPU convention.

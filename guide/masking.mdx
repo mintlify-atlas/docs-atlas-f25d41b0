@@ -1,0 +1,125 @@
+---
+title: "Stencil Masking and Scissor Clipping in Rapid.js"
+sidebarTitle: "Masking"
+description: "Clip rendering to arbitrary shapes using WebGL stencil-buffer masking. Use scissor clipping for rectangular regions. Combine mask types for complex effects."
+---
+
+Rapid supports two complementary clipping mechanisms: stencil masking for arbitrary shapes drawn with any geometry command, and scissor testing for simple rectangular regions. Stencil masking is powered by the WebGL stencil buffer and supports both "draw inside the shape" and "draw outside the shape" modes.
+
+---
+
+## Stencil Masking
+
+The stencil mask workflow has three phases: draw the mask geometry into the stencil buffer (invisible to the screen), render content constrained to that stencil, then reset the stencil for the next frame.
+
+### withMask (Recommended)
+
+`withMask` handles the entire lifecycle in a single call. The first callback draws the mask shape; the second callback draws the content that should be clipped to it.
+
+```typescript
+// Draw only inside a circular mask
+rapid.withMask(
+  () => {
+    rapid.drawCircle({ x: 300, y: 300, radius: 100, color: Color.White });
+  },
+  () => {
+    rapid.drawSprite({ texture: backgroundTexture });
+  },
+);
+```
+
+### MaskType
+
+The optional third argument to `withMask` (and `enterMask`) controls which pixels are visible:
+
+| Value | Behaviour |
+|---|---|
+| `MaskType.EQUAL` | Render only where the stencil value **equals** the reference (inside the mask shape). This is the default. |
+| `MaskType.NOT_EQUAL` | Render only where the stencil value **does not equal** the reference (outside the mask shape). |
+
+```typescript
+// Draw only outside the mask shape — useful for vignettes or exclusion zones
+rapid.withMask(
+  () => rapid.drawRect({ x: 100, y: 100, width: 200, height: 200, color: Color.White }),
+  () => rapid.drawSprite({ texture: vignetteTexture }),
+  MaskType.NOT_EQUAL,
+);
+```
+
+### Masking with a Texture's Alpha Channel
+
+`drawMaskImage` draws a texture's alpha channel into the stencil buffer, letting you use any pre-made PNG as a mask shape. Pixels where the texture is fully transparent will not write to the stencil.
+
+```typescript
+rapid.withMask(
+  () => rapid.drawMaskImage({ texture: maskTexture, x: 200, y: 200 }),
+  () => rapid.drawSprite({ texture: contentTexture }),
+);
+```
+
+### Manual Mask API
+
+For situations where you need more control — such as overlapping mask regions or conditional masking — you can drive the stencil phases directly:
+
+```typescript
+rapid.clearMask();          // clear the stencil buffer to zero
+
+rapid.startDrawMask();      // begin writing to stencil (color writes disabled)
+rapid.drawCircle({ x: 400, y: 300, radius: 150, color: Color.White });
+rapid.endDrawMask();        // finish writing; re-enable color writes
+
+rapid.enterMask(MaskType.EQUAL);   // restrict rendering to stencil == 1
+rapid.drawSprite({ texture: myTexture });
+rapid.drawRect({ x: 350, y: 250, width: 100, height: 100, color: Color.Blue });
+rapid.exitMask();           // restore default stencil state (always pass)
+```
+
+| Method | Description |
+|---|---|
+| `clearMask()` | Clears the stencil buffer. Call this before each new mask to avoid bleed from previous frames. |
+| `startDrawMask(ref?)` | Disables color writes and configures the stencil to write `ref` (default `1`) at every covered pixel. |
+| `endDrawMask()` | Re-enables color writes and locks the stencil buffer against further writes. |
+| `enterMask(type, ref?)` | Configures the stencil test to pass only where the buffer equals (or does not equal) `ref`. |
+| `exitMask()` | Resets the stencil test to always-pass, restoring unrestricted rendering. |
+
+<Note>
+`withMask` calls `clearMask` automatically before drawing the mask geometry, so you do not need to clear the stencil manually when using the convenience wrapper.
+</Note>
+
+---
+
+## Scissor Clipping
+
+Scissor clipping restricts all rendering to a given rectangle in logical pixel coordinates. It is implemented directly in WebGL hardware and carries no stencil-buffer overhead.
+
+### withScissor (Recommended)
+
+`withScissor` enables the scissor rectangle, runs a callback, then disables it automatically:
+
+```typescript
+rapid.withScissor(50, 50, 300, 200, () => {
+  rapid.drawSprite({ texture: largeBackground });
+  rapid.drawText({ text: "Hello", x: 60, y: 60 });
+});
+```
+
+Arguments are `(x, y, width, height, callback)` in logical pixel coordinates with a top-left origin.
+
+### Manual startScissor / endScissor
+
+```typescript
+rapid.startScissor(0, 0, 400, 300);
+rapid.drawSprite({ texture: myTexture });
+rapid.drawRect({ x: 10, y: 10, width: 380, height: 280, color: Color.Blue });
+rapid.endScissor();
+```
+
+Rapid converts logical coordinates to physical pixels automatically, accounting for the device pixel ratio and the difference between `logicWidth`/`logicHeight` and `physicsWidth`/`physicsHeight`. The Y axis is also flipped to match WebGL's bottom-left origin internally, so you always supply coordinates in your game's top-left coordinate system.
+
+<Tip>
+Scissor clipping is significantly cheaper than stencil masking for rectangular regions like UI panels, inventory slots, or scrolling text boxes. If your clip area is always a rectangle, prefer `withScissor` over `withMask`.
+</Tip>
+
+<Note>
+Scissor and stencil masking can be active simultaneously. Scissor takes effect before the stencil test in the WebGL pipeline, so rendering is first restricted to the scissor rectangle and then further constrained by the stencil mask.
+</Note>

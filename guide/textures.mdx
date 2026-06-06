@@ -1,0 +1,224 @@
+---
+title: "Loading and Managing Textures in Rapid.js"
+sidebarTitle: "Textures"
+description: "Load images asynchronously, create textures from canvas or video, split sprite sheets into sub-textures, and manage texture memory with TextureManager."
+---
+
+All GPU texture resources in Rapid.js are managed through `rapid.texture`, an instance of `TextureManager`. It handles asynchronous loading, synchronous creation from existing DOM elements, reference-counted memory management, and a URL-keyed cache that prevents the same image from being uploaded to the GPU more than once.
+
+---
+
+## Loading a Texture from a URL
+
+`rapid.texture.load()` fetches an image by URL, uploads it to the GPU, stores it in the cache, and returns a `Texture` wrapped in a `Promise`. Subsequent calls with the same URL return a new `Texture` view backed by the already-cached `BaseTexture` — no extra network requests or GPU uploads occur.
+
+```typescript
+// In an async initialisation function:
+const playerTex = await rapid.texture.load("/assets/player.png");
+const tileTex   = await rapid.texture.load("/assets/tileset.png");
+
+// Load multiple textures in parallel:
+const [bg, fg] = await Promise.all([
+  rapid.texture.load("/assets/background.png"),
+  rapid.texture.load("/assets/foreground.png"),
+]);
+```
+
+You can pass an optional `ITextureOptions` object as the second argument to control filtering, wrapping, and premultiplied alpha for that specific texture.
+
+```typescript
+const smoothTex = await rapid.texture.load("/assets/gradient.png", {
+  textureFilter: TextureFilterMode.LINEAR,
+  wrap: TextureWrapMode.CLAMP,
+});
+```
+
+---
+
+## Creating a Texture from an Existing Source
+
+`rapid.texture.create()` uploads any supported DOM element synchronously. This is useful for procedurally generated canvases, `<img>` elements already present in the DOM, or `<video>` frames.
+
+```typescript
+const img = document.getElementById("myImg") as HTMLImageElement;
+const tex = rapid.texture.create(img, { key: "player" });
+```
+
+Supported source types are `HTMLImageElement`, `HTMLCanvasElement`, `HTMLVideoElement`, `ImageBitmap`, and `OffscreenCanvas`.
+
+<Note>
+  Providing a `key` in `ITextureOptions` causes `create()` to register the texture in the shared cache under that key. A subsequent call to `rapid.texture.create(...)` with the same `key` returns the cached `BaseTexture` without re-uploading.
+</Note>
+
+---
+
+## ITextureOptions Reference
+
+<ParamField path="textureFilter" type="TextureFilterMode">
+  Per-texture sampling filter. `TextureFilterMode.NEAREST` preserves crisp pixel edges; `TextureFilterMode.LINEAR` blurs between texels. Overrides the renderer-level default set in `IAppOptions`.
+</ParamField>
+
+<ParamField path="wrap" type="TextureWrapMode">
+  Controls how UV coordinates outside the `[0, 1]` range are handled. See [Wrap Modes](#texture-wrap-modes) below.
+</ParamField>
+
+<ParamField path="premultipliedAlpha" type="boolean">
+  Whether to upload this texture with premultiplied alpha. Defaults to the value set on the `Rapid` instance. Override per-texture only when mixing assets with different alpha conventions.
+</ParamField>
+
+<ParamField path="key" type="string">
+  A custom cache key. When provided, `create()` checks the cache first and stores the result for reuse. Has no effect on `load()`, which always uses the URL as the key.
+</ParamField>
+
+---
+
+## Texture Wrap Modes
+
+`TextureWrapMode` is an enum with three values that control texture tiling behaviour.
+
+| Value | WebGL equivalent | Behaviour |
+|---|---|---|
+| `TextureWrapMode.CLAMP` | `CLAMP_TO_EDGE` | UV coordinates are clamped to `[0, 1]`. Pixels at the border stretch to the edge — no tiling. |
+| `TextureWrapMode.REPEAT` | `REPEAT` | UV coordinates wrap, producing seamless tiling. |
+| `TextureWrapMode.MIRRORED_REPEAT` | `MIRRORED_REPEAT` | Like `REPEAT`, but alternating tiles are mirrored. |
+
+<Warning>
+  `TextureWrapMode.REPEAT` and `TextureWrapMode.MIRRORED_REPEAT` require the texture dimensions to be a power of two (e.g. 128×128, 256×512) on some WebGL implementations. Non-power-of-two textures may silently fall back to `CLAMP_TO_EDGE`.
+</Warning>
+
+---
+
+## Texture Properties
+
+Once you have a `Texture`, you can read these properties:
+
+| Property | Type | Description |
+|---|---|---|
+| `width` | `number` | Logical display width in pixels. Accounts for `isRotated` and `scale`. |
+| `height` | `number` | Logical display height in pixels. Accounts for `isRotated` and `scale`. |
+| `rawWidth` | `number` | The actual pixel width of the texture region, before any scale. |
+| `rawHeight` | `number` | The actual pixel height of the texture region, before any scale. |
+| `offsetX` | `number` | Horizontal draw offset applied automatically when the texture is drawn. |
+| `offsetY` | `number` | Vertical draw offset applied automatically when the texture is drawn. |
+| `uvX` | `number` | Left edge of the UV region within the base GPU texture (0–1). |
+| `uvY` | `number` | Top edge of the UV region within the base GPU texture (0–1). |
+| `uvW` | `number` | Right edge of the UV region within the base GPU texture (0–1). |
+| `uvH` | `number` | Bottom edge of the UV region within the base GPU texture (0–1). |
+| `flipY` | `boolean` | Whether the texture is flipped vertically. `true` for `RenderTexture` and `TextTexture`. |
+| `isRotated` | `boolean` | Set by atlas packers when a sprite has been rotated 90° to save space. |
+
+---
+
+## Sprite Sheet Splitting
+
+A common workflow is loading a single sprite sheet image and then splitting it into individual frame textures. Rapid provides two methods on `Texture` for this.
+
+### `splitGrid(cellWidth, cellHeight)`
+
+Divides the texture into a uniform grid of `cellWidth × cellHeight` tiles and returns them as an array ordered left-to-right, top-to-bottom.
+
+```typescript
+const sheet = await rapid.texture.load("/assets/tileset.png");
+
+// Split a 64×64 sheet of 16×16 tiles into 16 sub-textures.
+const tiles = sheet.splitGrid(16, 16);
+
+// Access individual tiles:
+const grassTile = tiles[0];
+const waterTile = tiles[1];
+```
+
+You can also specify explicit column and row counts if you want to read only part of the sheet:
+
+```typescript
+// Read only the first two columns and first row of a larger sheet.
+const partialTiles = sheet.splitGrid(16, 16, 2, 1);
+```
+
+### `getSubTexture(x, y, width, height)`
+
+Extracts a single rectangular region from the texture at a specified pixel offset. Coordinates are relative to the top-left of the parent texture's current region.
+
+```typescript
+const sheet = await rapid.texture.load("/assets/characters.png");
+
+// Extract a 32×48 frame starting at pixel (64, 0).
+const runFrame2 = sheet.getSubTexture(64, 0, 32, 48);
+```
+
+<Tip>
+  Sub-textures returned by both `splitGrid` and `getSubTexture` share the same underlying GPU `BaseTexture` and only store a UV region. They are extremely lightweight — create as many as you need without worrying about GPU memory.
+</Tip>
+
+---
+
+## Destroying Textures
+
+Rapid uses reference counting on `BaseTexture`. Each `Texture` view that wraps a `BaseTexture` increments its `refCount`; calling `destroy()` decrements it. The GPU resource is only freed when `refCount` reaches zero.
+
+```typescript
+// Decrement the refcount. GPU texture is freed only when refCount reaches 0.
+rapid.texture.destroy(tex);
+
+// Force immediate GPU deletion regardless of refcount.
+rapid.texture.destroy(tex, true);
+
+// Destroy by cache key (URL or custom key).
+rapid.texture.destroy("/assets/player.png");
+
+// Destroy every cached texture and clear the cache entirely.
+rapid.texture.destroyAll();
+```
+
+<Warning>
+  After calling `rapid.texture.destroy(tex)`, do not issue draw calls that reference `tex`. If other `Texture` views still hold a reference (refCount > 0) the GPU texture survives, but the specific `Texture` instance passed to `destroy()` will have its `base` set to `undefined`.
+</Warning>
+
+<Note>
+  `RenderTexture` instances are **not** stored in the URL cache and must be destroyed manually by calling `rapid.texture.destroy(rt, true)` or `rt.destroy()` when no longer needed.
+</Note>
+
+---
+
+## Render Textures
+
+`RenderTexture` is a `Texture` subclass backed by a WebGL framebuffer. Use it to render the scene (or part of it) into an off-screen buffer that can then be drawn as a normal sprite.
+
+```typescript
+const rt = rapid.texture.createRenderTexture({ width: 256, height: 256 });
+
+rapid.drawToRenderTexture(rt, () => {
+  rapid.drawSprite({ texture: playerTex, x: 0, y: 0 });
+});
+
+// Draw the captured result onto the main canvas.
+rapid.drawSprite({ texture: rt, x: 100, y: 100 });
+```
+
+---
+
+## Text Textures
+
+`TextTexture` renders text via an internal HTML `<canvas>` and uploads the result as a GPU texture. Update the text content or style at any time — the texture re-uploads automatically.
+
+```typescript
+const label = rapid.texture.createTextTexture({
+  text: "Score: 0",
+  fontFamily: "Arial, sans-serif",
+  fontSize: 24,
+  fontWeight: "700",
+  fill: "#ffffff",
+  stroke: "#000000",
+  strokeThickness: 3,
+  textureFilter: TextureFilterMode.LINEAR,
+});
+
+// Later, change the text dynamically:
+label.text = "Score: 42";
+
+// Change style properties:
+label.style = { fill: "#ffdd00" };
+
+// Draw it exactly like any other texture:
+rapid.drawSprite({ texture: label, x: 16, y: 16 });
+```

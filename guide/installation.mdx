@@ -1,0 +1,109 @@
+---
+title: "Install Rapid.js in Your Project"
+sidebarTitle: "Installation"
+description: "Install rapid-render via npm, yarn, or pnpm. Learn how to import Rapid.js in TypeScript and JavaScript projects and set up a canvas element."
+---
+
+Rapid.js is published to npm under the package name **`rapid-render`**. It ships as a native ES module with a companion UMD bundle for environments that require CommonJS. TypeScript declarations are included in the package — no `@types` package is needed.
+
+<Warning>
+  Rapid.js is under active development. You may encounter bugs or incomplete features. Contributions and issue reports are welcome on the [GitHub repository](https://github.com/Nightre/Rapid.js).
+</Warning>
+
+## Install the Package
+
+<CodeGroup>
+
+```bash npm
+npm install rapid-render
+```
+
+```bash yarn
+yarn add rapid-render
+```
+
+```bash pnpm
+pnpm add rapid-render
+```
+
+</CodeGroup>
+
+## Import in Your Project
+
+Import the classes and enums you need directly from `rapid-render`. The package is fully tree-shakeable, so unused exports are removed by your bundler at build time.
+
+```typescript TypeScript
+import { Rapid, Color, BlendMode, TextureFilterMode } from "rapid-render";
+```
+
+```javascript JavaScript (ESM)
+import { Rapid, Color, BlendMode, TextureFilterMode } from "rapid-render";
+```
+
+The full set of named exports includes `Rapid`, `Color`, `BlendMode`, `MaskType`, `TextureFilterMode`, `CanvasScaleMode`, `RenderTexture`, `Texture`, `TextureManager`, `MatrixStack`, `Vec2`, `CustomGlShader`, and more. See the API reference for the complete list.
+
+## CDN / UMD Usage
+
+If you are not using a bundler, the `dist` folder exposes two ready-to-use builds:
+
+| File | Format | Use case |
+|---|---|---|
+| `dist/rapid.js` | ES module | Modern bundlers, `<script type="module">` |
+| `dist/rapid.umd.cjs` | UMD / CommonJS | Legacy bundlers, Node.js `require()` |
+
+```html CDN via script module
+<script type="module">
+  import { Rapid, Color, TextureFilterMode } from "./dist/rapid.js";
+  // your code here
+</script>
+```
+
+## Set Up the Canvas
+
+Rapid.js renders into a standard HTML `<canvas>` element. Add one to your HTML file and give it an `id` so you can reference it from JavaScript.
+
+```html HTML
+<canvas id="canvas" width="800" height="600"></canvas>
+```
+
+The `width` and `height` attributes set the canvas's initial pixel dimensions. Rapid.js will resize the backing framebuffer based on the `IAppOptions` you pass to the constructor, so these attributes primarily serve as fallbacks.
+
+## Create the Rapid Instance
+
+Pass an `IAppOptions` object to the `Rapid` constructor to configure the renderer. The only required field is `canvas`; all others have sensible defaults.
+
+```typescript TypeScript
+const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+
+const rapid = new Rapid({
+  canvas,
+  logicWidth: 800,
+  logicHeight: 600,
+  backgroundColor: Color.fromHex("#1a1a2e"),
+  antialias: false,
+  textureFilter: TextureFilterMode.NEAREST,
+});
+```
+
+### IAppOptions Reference
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `canvas` | `HTMLCanvasElement` | *(required)* | The canvas element to render into. |
+| `logicWidth` | `number` | canvas CSS width | Logical viewport width in CSS pixels. All draw-call coordinates use this space. |
+| `logicHeight` | `number` | canvas CSS height | Logical viewport height in CSS pixels. |
+| `physicsWidth` | `number` | `logicWidth × dpr` | Actual GPU framebuffer width in device pixels. |
+| `physicsHeight` | `number` | `logicHeight × dpr` | Actual GPU framebuffer height in device pixels. |
+| `backgroundColor` | `Color` | `Color.Black` | Default clear color applied by `rapid.clear()`. |
+| `antialias` | `boolean` | `false` | Whether to enable MSAA antialiasing on the WebGL canvas. |
+| `textureFilter` | `TextureFilterMode` | `NEAREST` | Default texture sampling mode: `LINEAR` (smooth) or `NEAREST` (pixel-art). |
+| `premultipliedAlpha` | `boolean` | `true` | Whether textures are uploaded with premultiplied alpha. |
+| `roundPixels` | `boolean` | `false` | Snap sprite positions to integer pixels to avoid sub-pixel blurring. |
+| `scaleMode` | `CanvasScaleMode` | `CanvasItem` | How the canvas scales: `CanvasItem` (rasterize at display resolution) or `Viewport` (stretch the logical-size bitmap). |
+
+### Logical vs. Physical Dimensions
+
+`logicWidth` / `logicHeight` define the **coordinate space** your game uses. Every draw call uses these units. `physicsWidth` / `physicsHeight` are the **actual GPU pixel dimensions** of the WebGL framebuffer — on HiDPI / Retina displays these are typically `logicWidth × devicePixelRatio`. 
+
+- Use `logicWidth` / `logicHeight` when you want your game to work in consistent CSS-pixel coordinates on all screens.
+- Use `physicsWidth` / `physicsHeight` when you need to control the exact GPU resolution, for example to lock a pixel-art game to its native resolution regardless of the display DPR.
