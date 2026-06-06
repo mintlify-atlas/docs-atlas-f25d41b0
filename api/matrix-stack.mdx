@@ -355,7 +355,7 @@ translate(index: number, x: number, y: number): void
 
 Post-multiplies a translation by `(x, y)` into the matrix at `index`.
 
-### `scale(index, sx, sy)`
+### `scale(index, scaleX, scaleY)`
 
 ```typescript
 scale(index: number, scaleX: number, scaleY: number): void
@@ -400,13 +400,13 @@ multiply(dst: number, src: number): void
 
 Multiplies the matrix at `dst` by the matrix at `src`, storing the result back in `dst`. Equivalent to `multiplyOut(dst, dst, src)`.
 
-### `multiplyOut(out, a, b)`
+### `multiplyOut(out, aIdx, bIdx)`
 
 ```typescript
-multiplyOut(out: number, a: number, b: number): void
+multiplyOut(out: number, aIdx: number, bIdx: number): void
 ```
 
-Multiplies matrix `a` by matrix `b` and stores the result in `out`. `out` may safely alias `a` or `b`.
+Multiplies matrix `aIdx` by matrix `bIdx` and stores the result in `out`. `out` may safely alias `aIdx` or `bIdx`.
 
 ### `invert(index)`
 

@@ -19,28 +19,28 @@ Each frame follows the same three-step rhythm:
 ## Key Features
 
 <CardGroup cols={2}>
-  <Card title="Instanced Sprites" icon="images">
+  <Card title="Instanced Sprites" icon="images" href="/guide/sprites">
     Sprites are batched using WebGL2 instanced rendering. Thousands of textured quads can be dispatched in a single draw call, making sprite-heavy games extremely efficient.
   </Card>
-  <Card title="Transform Stack" icon="layer-group">
+  <Card title="Transform Stack" icon="layer-group" href="/guide/transforms">
     A `MatrixStack` lets you push, pop, and compose hierarchical 2D transforms — translation, rotation, scale, and origin-relative pivoting — without allocating new matrix objects every frame.
   </Card>
-  <Card title="Render Textures" icon="square">
+  <Card title="Render Textures" icon="square" href="/guide/render-textures">
     Render any draw calls into an offscreen `RenderTexture`, then use that texture as input to subsequent draw calls. Enables post-processing, shadow maps, and UI caching.
   </Card>
-  <Card title="Particle System" icon="sparkles">
+  <Card title="Particle System" icon="sparkles" href="/guide/particles">
     A built-in particle system drives hundreds of independently animated particles through the same batched sprite path, keeping particle effects GPU-efficient by default.
   </Card>
-  <Card title="Custom GLSL Shaders" icon="code">
+  <Card title="Custom GLSL Shaders" icon="code" href="/guide/shaders">
     Attach a `CustomGlShader` to any draw call to override the default vertex or fragment program. Chain multiple shaders with `applyFilters()` for multi-pass filter pipelines.
   </Card>
-  <Card title="Text Rendering" icon="text-size">
+  <Card title="Text Rendering" icon="text-size" href="/guide/text">
     `TextTexture` rasterizes text via an internal HTML Canvas and uploads the result as a WebGL texture. Text and style can be updated at runtime without rebuilding the texture object.
   </Card>
-  <Card title="Blend Modes" icon="wand-magic-sparkles">
+  <Card title="Blend Modes" icon="wand-magic-sparkles" href="/guide/blend-modes">
     Switch between `NORMAL`, `ADD`, `MULTIPLY`, `SCREEN`, and `ERASE` blend modes per-batch. Use the `withBlendMode()` helper to scope a blend mode to a specific set of draw calls.
   </Card>
-  <Card title="Masking" icon="mask">
+  <Card title="Masking" icon="mask" href="/guide/masking">
     Stencil-buffer masking lets you clip any draw calls to an arbitrary shape. `withMask()` handles the full stencil write/test/clear cycle in a single callback-based API.
   </Card>
 </CardGroup>

@@ -1,7 +1,7 @@
 ---
-title: "GLShader — WebGL Shader Program Wrapper"
+title: "GLShader — WebGL2 Shader Program Wrapper Reference"
 sidebarTitle: "GLShader"
-description: "API reference for GLShader: create compiled WebGL shader programs, auto-parsed uniforms and attributes, setUniform, setUniforms, VAO management, and lifecycle."
+description: "API reference for GLShader: compile WebGL2 shader programs, auto-parse uniforms and attributes, manage VAOs, set uniforms, and handle GPU lifecycle."
 ---
 
 `GLShader` wraps a compiled WebGL2 program. It auto-parses attribute and uniform names and types from GLSL source at construction time, so you can set them by name without ever querying locations manually. Each instance owns a dedicated VAO and exposes a clean API for uploading uniforms, binding vertex attributes, and managing GPU lifecycle.

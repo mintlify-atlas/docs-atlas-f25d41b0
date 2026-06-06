@@ -1,7 +1,7 @@
 ---
-title: "Texture Class — UV Regions and Sub-Textures"
+title: "Texture — UV Regions, Sub-Textures, and Sprite Sheets"
 sidebarTitle: "Texture"
-description: "API reference for Texture: UV region, sub-texture extraction, sprite sheet splitting, clone, and static factory methods."
+description: "Rapid.js Texture class: UV region clipping, sub-texture extraction, sprite sheet splitting, clone, static factory, and BaseTexture reference counting."
 ---
 
 `Texture` is a lightweight view over a `BaseTexture`. Multiple `Texture` objects can reference the same GPU resource simultaneously, each describing a different rectangular UV region within it. This makes `Texture` the natural building block for sprite sheets, atlases, and any use-case where you want to pack many images onto a single GPU upload.
@@ -90,6 +90,12 @@ description: "API reference for Texture: UV region, sub-texture extraction, spri
   `true` if this `Texture` represents a sub-region of a larger `BaseTexture`
   (i.e. the region does not cover the full GPU texture). Set automatically by
   `setRegion()`.
+</ParamField>
+
+<ParamField path="glTexture" type="WebGLTexture | null">
+  Direct reference to the underlying WebGL texture handle, mirrored from
+  `base.glTexture` for quick access by the renderer. `null` after `destroy()`
+  or before a `BaseTexture` has been assigned.
 </ParamField>
 
 ---

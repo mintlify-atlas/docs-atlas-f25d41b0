@@ -1,5 +1,5 @@
 ---
-title: "Color Class — RGBA Color Values for Rapid.js"
+title: "Color — RGBA Color Values and Operations for Rapid.js"
 sidebarTitle: "Color"
 description: "API reference for the Color class: RGBA components, factory methods from hex/HSL/normalized, arithmetic operations, and premultiplied alpha support."
 ---
@@ -277,6 +277,35 @@ Clamp all four components to the valid 0–255 range in-place. Useful after a se
 clamp(): void
 ```
 
+---
+
+### `reset()`
+
+Reset all four components to their default values: `r = 0`, `g = 0`, `b = 0`, `a = 255` (opaque black). Updates `uint32` and `premultipliedUint32` automatically.
+
+```typescript
+reset(): void
+```
+
+```typescript
+color.reset(); // back to opaque black
+```
+
+---
+
+### `setClearColor(gl)`
+
+Call `gl.clearColor` with this color's components normalized to the 0.0–1.0 range. Convenience method for setting the WebGL canvas clear color directly from a `Color` instance.
+
+```typescript
+setClearColor(gl: WebGL2RenderingContext): void
+```
+
+```typescript
+const bg = new Color(30, 30, 30);
+bg.setClearColor(gl); // equivalent to gl.clearColor(30/255, 30/255, 30/255, 1)
+```
+
 ## Named Static Colors
 
 Rapid.js ships predefined `Color` constants for common colors. Each is a `static` property on the `Color` class.
@@ -298,6 +327,7 @@ Rapid.js ships predefined `Color` constants for common colors. Each is a `static
 | `Color.White` | `(255, 255, 255)` |
 | `Color.Black` | `(0, 0, 0)` |
 | `Color.Transparent` | `(0, 0, 0, 0)` |
+| `Color.TRANSPARENT` | `(0, 0, 0, 0)` |
 
 ## Code Examples
 

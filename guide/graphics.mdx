@@ -114,8 +114,8 @@ rapid.drawCircle({
 
 `ILineOptions` extends `ILineRenderOptions` from the line module and `IDrawOptions`.
 
-<ParamField path="points" type="Vec2[] | {x: number, y: number}[]" required>
-  The ordered list of vertices that define the path. At least two points are required.
+<ParamField path="points" type="Vec2[]" required>
+  The ordered list of `Vec2` vertices that define the path. At least two points are required.
 </ParamField>
 
 <ParamField path="width" type="number">
@@ -251,7 +251,7 @@ Enters the graphics region and begins a new primitive batch. Call this once befo
 
 **`addGraphicVertex(x, y, u?, v?, color?)`**
 
-Appends a single vertex. `u` and `v` are UV coordinates (default `0`). `color` is a packed `uint32` — use `rapid.getColorUint32(myColor)` or pass `0xFFFFFFFF` for white.
+Appends a single vertex. `u` and `v` are UV coordinates (default `0`). `color` is a packed `uint32` — use `color.uint32` (or `color.premultipliedUint32` when premultiplied alpha is enabled) to convert a `Color` instance, or pass `0xFFFFFFFF` directly for opaque white.
 
 **`endGraphic()`**
 

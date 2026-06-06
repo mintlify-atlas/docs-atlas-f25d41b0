@@ -14,7 +14,7 @@ import { Rapid, CustomGlShader } from "rapid-render";
 const glowShader = new CustomGlShader(
   rapid,
   // Vertex hook — receives the final vertex position and UV region
-  `void vertex(vec2 position, vec4 vRegion) {}`,
+  `void vertex(vec4 position, vec2 vRegion) {}`,
   // Fragment hook — receives and can modify the sampled fragment color
   `void fragment(inout vec4 fragColor) {
     float glow = fragColor.a * 0.5;
@@ -36,7 +36,7 @@ new CustomGlShader(
 ```
 
 <Note>
-The `vertex` and `fragment` function signatures must match exactly. The vertex hook receives `vec2 position` (the transformed vertex position) and `vec4 vRegion` (the UV region bounds). The fragment hook receives `inout vec4 fragColor` (the sampled and tinted color). If you do not need to modify a stage, pass an empty body: `void vertex(vec2 position, vec4 vRegion) {}`.
+The `vertex` and `fragment` function signatures must match exactly. The vertex hook receives `vec4 position` (the transformed vertex position) and `vec2 vRegion` (the UV region coordinates). The fragment hook receives `inout vec4 fragColor` (the sampled and tinted color). If you do not need to modify a stage, pass an empty body: `void vertex(vec4 position, vec2 vRegion) {}`.
 </Note>
 
 ## Using a Shader on a Draw Call
@@ -96,7 +96,7 @@ You can compose multiple shaders into a sequential post-process pipeline using `
 
 ```typescript
 const blurShader = new CustomGlShader(rapid,
-  `void vertex(vec2 p, vec4 r) {}`,
+  `void vertex(vec4 p, vec2 r) {}`,
   `uniform float uRadius;
    void fragment(inout vec4 color) {
      // box blur sampling logic using sampleTextureLocal()
@@ -105,7 +105,7 @@ const blurShader = new CustomGlShader(rapid,
 blurShader.setUniforms({ uRadius: 3.0 });
 
 const outlineShader = new CustomGlShader(rapid,
-  `void vertex(vec2 p, vec4 r) {}`,
+  `void vertex(vec4 p, vec2 r) {}`,
   `uniform vec4 uOutlineColor;
    void fragment(inout vec4 color) {
      // outline detection logic
@@ -138,7 +138,7 @@ When your shader samples additional textures beyond the sprite — for example a
 ```typescript
 const compositeShader = new CustomGlShader(
   rapid,
-  `void vertex(vec2 p, vec4 r) {}`,
+  `void vertex(vec4 p, vec2 r) {}`,
   `uniform sampler2D uMaskTex;
    void fragment(inout vec4 color) {
      vec4 mask = texture(uMaskTex, vRegion);

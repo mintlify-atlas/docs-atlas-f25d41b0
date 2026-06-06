@@ -1,5 +1,5 @@
 ---
-title: "RenderTexture — Offscreen Framebuffer API"
+title: "RenderTexture — WebGL Offscreen Framebuffer Rendering"
 sidebarTitle: "RenderTexture"
 description: "API reference for RenderTexture: resize, activate, clear, pixel read-back, and using a RenderTexture as a drawable Texture in Rapid.js."
 ---
@@ -62,6 +62,22 @@ const rt = rapid.texture.createRenderTexture({
 <ParamField path="premultipliedAlpha" type="boolean">
   Whether the texture is treated as premultiplied-alpha. Passed through to the
   underlying `ITextureOptions`.
+</ParamField>
+
+---
+
+## Public Properties
+
+<ParamField path="flipY" type="boolean" default="true">
+  Always `true` on `RenderTexture`. Instructs the renderer to flip UV
+  coordinates vertically when drawing this texture, compensating for WebGL's
+  bottom-left framebuffer origin so content appears right-side-up on screen.
+</ParamField>
+
+<ParamField path="clearColor" type="Color | undefined">
+  The default clear color used by `activate(true)` and `clear()` when no
+  explicit color argument is passed. Initialized from `IRenderTextureOptions.clearColor`
+  and defaults to `Color.Black` if omitted.
 </ParamField>
 
 ---

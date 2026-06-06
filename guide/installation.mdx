@@ -92,8 +92,8 @@ const rapid = new Rapid({
 | `canvas` | `HTMLCanvasElement` | *(required)* | The canvas element to render into. |
 | `logicWidth` | `number` | canvas CSS width | Logical viewport width in CSS pixels. All draw-call coordinates use this space. |
 | `logicHeight` | `number` | canvas CSS height | Logical viewport height in CSS pixels. |
-| `physicsWidth` | `number` | `logicWidth × dpr` | Actual GPU framebuffer width in device pixels. |
-| `physicsHeight` | `number` | `logicHeight × dpr` | Actual GPU framebuffer height in device pixels. |
+| `physicsWidth` | `number` | `canvas CSS width × dpr` | Actual GPU framebuffer width in device pixels. |
+| `physicsHeight` | `number` | `canvas CSS height × dpr` | Actual GPU framebuffer height in device pixels. |
 | `backgroundColor` | `Color` | `Color.Black` | Default clear color applied by `rapid.clear()`. |
 | `antialias` | `boolean` | `false` | Whether to enable MSAA antialiasing on the WebGL canvas. |
 | `textureFilter` | `TextureFilterMode` | `NEAREST` | Default texture sampling mode: `LINEAR` (smooth) or `NEAREST` (pixel-art). |
@@ -103,7 +103,7 @@ const rapid = new Rapid({
 
 ### Logical vs. Physical Dimensions
 
-`logicWidth` / `logicHeight` define the **coordinate space** your game uses. Every draw call uses these units. `physicsWidth` / `physicsHeight` are the **actual GPU pixel dimensions** of the WebGL framebuffer — on HiDPI / Retina displays these are typically `logicWidth × devicePixelRatio`. 
+`logicWidth` / `logicHeight` define the **coordinate space** your game uses. Every draw call uses these units. `physicsWidth` / `physicsHeight` are the **actual GPU pixel dimensions** of the WebGL framebuffer — on HiDPI / Retina displays these are typically `canvas CSS width × devicePixelRatio`.
 
 - Use `logicWidth` / `logicHeight` when you want your game to work in consistent CSS-pixel coordinates on all screens.
 - Use `physicsWidth` / `physicsHeight` when you need to control the exact GPU resolution, for example to lock a pixel-art game to its native resolution regardless of the display DPR.

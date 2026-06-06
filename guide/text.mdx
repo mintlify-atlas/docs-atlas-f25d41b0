@@ -1,5 +1,5 @@
 ---
-title: "Rendering Text with TextTexture in Rapid.js"
+title: "Rapid.js Text Guide: Rendering Text with TextTexture"
 sidebarTitle: "Text"
 description: "Render styled text using TextTexture, which bakes text onto a canvas and uploads it to WebGL. Supports fonts, colors, stroke, multi-line, and live updates."
 ---
@@ -163,9 +163,7 @@ const smoothLabel = rapid.texture.createTextTexture({
 The pattern below comes directly from the Rapid.js text demo. It shows how to create a `Rapid` instance configured for text, build multiple styled `TextTexture` objects up front, and update one dynamically each frame:
 
 ```typescript
-import { Color } from "rapid.js/color";
-import { Rapid, TextureFilterMode } from "rapid.js/render";
-import { TextureWrapMode } from "rapid.js/texture";
+import { Color, Rapid, TextureFilterMode, TextureWrapMode } from "rapid-render";
 
 const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 const rapid = new Rapid({

@@ -65,7 +65,7 @@ Creates a new `Rapid` renderer attached to the supplied canvas. The constructor 
 **Example**
 
 ```typescript
-import { Rapid, Color } from "rapid-render";
+import { Rapid, Color, TextureFilterMode } from "rapid-render";
 
 const rapid = new Rapid({
   canvas: document.getElementById("game-canvas") as HTMLCanvasElement,
@@ -166,6 +166,38 @@ window.addEventListener("resize", () => {
   rapid.resize(1280, 720, window.innerWidth, window.innerHeight);
 });
 ```
+
+---
+
+## Settings Methods
+
+### `setTextureFilter(filter)`
+
+```typescript
+setTextureFilter(filter: TextureFilterMode): void
+```
+
+Updates the default texture sampling filter used when new textures are uploaded. Takes effect for textures loaded after this call.
+
+<ParamField path="filter" type="TextureFilterMode" required>
+  `TextureFilterMode.NEAREST` for hard-edged pixel art; `TextureFilterMode.LINEAR` for smooth bilinear filtering.
+</ParamField>
+
+```typescript
+rapid.setTextureFilter(TextureFilterMode.LINEAR);
+```
+
+### `setAntialias(antialias)`
+
+```typescript
+setAntialias(antialias: boolean): void
+```
+
+Sets the `antialias` property on the renderer. Note that the WebGL context's MSAA setting is fixed at construction time; this property is used by internal rendering logic that reads it at draw time.
+
+<ParamField path="antialias" type="boolean" required>
+  `true` to enable antialiasing; `false` to disable.
+</ParamField>
 
 ---
 
@@ -406,6 +438,41 @@ Begins a new geometry batch in the graphic region. The current world matrix is u
 <ParamField path="customMatrix" type="number">
   Index into `MatrixStore` to use as the transform. Defaults to `matrixStack.curWorldM`.
 </ParamField>
+
+### `startMaskGraphic(drawMode?, texture?, customMatrix?)`
+
+```typescript
+startMaskGraphic(
+  drawMode?: number,
+  texture?: Texture,
+  customMatrix?: number
+): void
+```
+
+Starts a geometry batch that uses the internal mask shader, rendering geometry into the stencil buffer rather than the colour buffer. Use this before `addGraphicVertex` / `addRectVertex` / `addCircleVertex` / `endGraphic()` when you want to build mask shapes from raw vertices instead of using `startDrawMask`.
+
+<ParamField path="drawMode" type="number">
+  WebGL primitive type. Default `gl.TRIANGLES`.
+</ParamField>
+
+<ParamField path="texture" type="Texture">
+  Optional texture whose alpha channel may be used to shape the mask.
+</ParamField>
+
+<ParamField path="customMatrix" type="number">
+  Index into `MatrixStore` to use as the transform. Defaults to `matrixStack.curWorldM`.
+</ParamField>
+
+```typescript
+rapid.startDrawMask();
+rapid.startMaskGraphic(rapid.gl.TRIANGLE_FAN);
+rapid.addGraphicVertex(0,   0);
+rapid.addGraphicVertex(100, 0);
+rapid.addGraphicVertex(100, 100);
+rapid.addGraphicVertex(0,   100);
+rapid.endGraphic();
+rapid.endDrawMask();
+```
 
 ### `addGraphicVertex(x, y, u?, v?, color?)`
 
@@ -753,6 +820,26 @@ endScissor(): void
 ```
 
 Disables the scissor test and restores full-canvas rendering.
+
+---
+
+## Region Method
+
+### `enterRegion(region, customShader?)`
+
+```typescript
+enterRegion(region: Region, customShader?: GLShader | CustomGlShader): void
+```
+
+Switches the renderer to the specified `Region`, flushing any pending draw calls for the previous region first. If the same region and shader are already active, the call is a no-op. This is a low-level method used internally by all draw helpers; call it directly only when building custom region integrations.
+
+<ParamField path="region" type="Region" required>
+  The rendering region to activate (e.g. `rapid.spriteRegion`, `rapid.graphicRegion`).
+</ParamField>
+
+<ParamField path="customShader" type="GLShader | CustomGlShader">
+  Optional shader override for the activated region.
+</ParamField>
 
 ---
 

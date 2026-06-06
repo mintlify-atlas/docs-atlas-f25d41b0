@@ -1,7 +1,7 @@
 ---
 title: "CustomGlShader — Inject GLSL into the Rendering Pipeline"
 sidebarTitle: "CustomGlShader"
-description: "API reference for CustomGlShader: inject vertex and fragment GLSL hooks into the Rapid.js sprite and graphic pipelines, set uniforms, and chain filter passes."
+description: "API reference for CustomGlShader: inject GLSL hooks into Rapid.js pipelines, compile per-region shaders lazily, set uniforms, and expand sprite padding."
 ---
 
 `CustomGlShader` injects user-provided GLSL `vertex()` and `fragment()` hook functions into the engine's built-in sprite and graphic shaders, without replacing the full program. Rather than writing a complete shader from scratch, you supply two small GLSL snippets that are spliced into the engine's template at compile time. Compilation is lazy — a distinct `GLShader` is compiled the first time each rendering region encounters the shader, so there is no upfront cost for regions that never draw with it.
@@ -64,10 +64,13 @@ void fragment(inout vec4 fragColor) {
 |---|---|---|
 | `vs` | `string` | The vertex hook source provided at construction. |
 | `fs` | `string` | The fragment hook source provided at construction. |
+| `glshader` | `Map<string, GLShader>` | Map of compiled `GLShader` instances keyed by region key. Populated lazily on the first draw call per region. |
 | `uniforms` | `Record<string, UniformValue>` | Current uniform values. Updated by `setUniforms`. |
-| `padding` | `number` | Extra pixels expanded on each side of the sprite quad. Set via `setPadding`. |
-| `usedTextureUnitNum` | `number` | Number of additional texture units reserved for user-supplied textures. |
+| `uniformDirty` | `Set<string>` | Set of region keys whose compiled `GLShader` instances need uniform re-upload on the next draw. |
 | `uniformTextures` | `Record<string, WebGLTexture>` | Map of texture uniform names to `WebGLTexture` objects to bind when this shader is active. |
+| `usedTextureUnitNum` | `number` | Number of additional texture units reserved for user-supplied textures. |
+| `padding` | `number` | Extra pixels expanded on each side of the sprite quad. Set via `setPadding`. |
+| `rapid` | `Rapid` | The `Rapid` renderer instance passed at construction. Used to call `rapid.flush()` before mutating uniform state. |
 
 ## Methods
 
@@ -134,15 +137,15 @@ const hueShift = new CustomGlShader(
   `
   uniform float uHue;
 
-  void fragment(inout vec4 color) {
+  void fragment(inout vec4 fragColor) {
     float angle   = uHue * 3.14159 * 2.0;
     float s = sin(angle), c = cos(angle);
     vec3 weights  = vec3(0.213, 0.715, 0.072);
-    float len     = dot(color.rgb, weights);
-    color.rgb = vec3(
-      len + (color.r - len) * c - color.g * weights.g * s,
-      len + (color.g - len) * c + color.r * weights.r * s,
-      len + (color.b - len) * c
+    float len     = dot(fragColor.rgb, weights);
+    fragColor.rgb = vec3(
+      len + (fragColor.r - len) * c - fragColor.g * weights.g * s,
+      len + (fragColor.g - len) * c + fragColor.r * weights.r * s,
+      len + (fragColor.b - len) * c
     );
   }
   `,

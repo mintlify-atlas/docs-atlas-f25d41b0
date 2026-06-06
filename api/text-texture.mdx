@@ -1,7 +1,7 @@
 ---
-title: "TextTexture — GPU-Accelerated Text Rendering"
+title: "TextTexture — Styled Text Rendering via Canvas 2D"
 sidebarTitle: "TextTexture"
-description: "API reference for TextTexture: create styled text, update text and style at runtime, and control alignment, baseline, fonts, fill, stroke, and multi-line layout."
+description: "API reference for TextTexture: render styled, multi-line text to a GPU texture with live updates, DPR-aware scaling, and Canvas 2D font control."
 ---
 
 `TextTexture` extends `Texture` and bridges the HTML5 Canvas 2D text rendering API with the WebGL pipeline. Each instance maintains an internal `HTMLCanvasElement`, measures and draws the current text with the configured style, then uploads the result as a WebGL texture. The canvas is sized at device-pixel-ratio resolution and the `Texture.scale` property is set to `1 / dpr`, so text appears crisp on high-DPR screens without any extra work.
@@ -95,6 +95,22 @@ All style fields are optional. Unset fields fall back to their default values.
 
 ---
 
+## ITextOptions
+
+`ITextOptions` is the interface accepted by `createTextTexture()`. It extends
+both `ITextStyle` and `ITextureOptions`, adding one additional field:
+
+<ParamField path="text" type="string">
+  The initial text string to display. Defaults to an empty string if omitted.
+  The value can be updated at any time via the `text` setter.
+</ParamField>
+
+All fields from [`ITextStyle`](#itextstyle) (font, fill, stroke, align,
+baseline) and [`ITextureOptions`](/api/texture-manager#itextureoptions)
+(textureFilter, wrap, premultipliedAlpha, key) are also valid in this object.
+
+---
+
 ## Properties
 
 ### `text` *(getter / setter)*
@@ -127,6 +143,14 @@ const currentStyle = label.style;
 // Partial update — only fontSize and fill change
 label.style = { fontSize: 40, fill: "#ffd700" };
 ```
+
+---
+
+### `flipY`
+
+Always `true` on `TextTexture`. Instructs the renderer to vertically flip the
+UV coordinates when drawing, correcting the orientation difference between the
+HTML5 Canvas coordinate system (top-left origin) and WebGL (bottom-left origin).
 
 ---
 

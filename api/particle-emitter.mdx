@@ -1,7 +1,7 @@
 ---
-title: "ParticleEmitter and Particle System API Reference"
+title: "Rapid.js ParticleEmitter and Particle System API Reference"
 sidebarTitle: "ParticleEmitter"
-description: "Complete API reference for ParticleEmitter and related interfaces: emit shapes, animated attributes, start/end value ranges, damping, and world/local space."
+description: "Full API reference for ParticleEmitter and related interfaces: emit shapes, animated attributes, start/end value ranges, damping, and world/local space."
 ---
 
 `ParticleEmitter` manages a pool of `Particle` objects. Each particle interpolates animated attributes — speed, rotation, scale, color, velocity, and acceleration — over its lifetime. The emitter controls how particles are spawned (rate, burst, shape) and how they are positioned (world space vs. local space). Call `update(dt)` and `render()` every frame to drive the simulation.
@@ -222,7 +222,7 @@ Describes how each visual attribute changes over a particle's lifetime. Every fi
 
 ## ParticleAttribute\<T\>
 
-Describes an animated value for a single particle attribute. `T` may be `number`, `Vec2`, or `Color`.
+Describes an animated value for a single particle attribute. `T` is constrained to the `ParticleAttributeTypes` union — `number`, `Vec2`, or `Color`.
 
 <ParamField path="start" type="T | [T, T]">
   The attribute's value at the start of the particle's life. Pass a plain value for a fixed start, or a `[min, max]` tuple to randomise each particle's starting value within the range.

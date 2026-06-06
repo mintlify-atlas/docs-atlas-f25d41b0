@@ -1,5 +1,5 @@
 ---
-title: "Rapid Renderer: Configuration and Lifecycle"
+title: "Rapid Renderer: Setup, Configuration, and Lifecycle"
 sidebarTitle: "Renderer"
 description: "Configure the Rapid WebGL2 renderer with canvas dimensions, pixel ratio, background color, texture filtering, and scale modes. Manage the frame lifecycle."
 ---
@@ -76,7 +76,7 @@ const rapid = new Rapid({
 
 ### `CanvasScaleMode.CanvasItem` (default)
 
-The WebGL backbuffer is sized at `physicsWidth × physicsHeight` (logical size multiplied by the device pixel ratio). The canvas CSS size stays at the logical dimensions. Rotated sprites, lines, and geometry are rasterized at the full display resolution — ideal for games targeting HD and Retina displays.
+The WebGL backbuffer is sized at `physicsWidth × physicsHeight` (the CSS display size multiplied by the device pixel ratio). Rendering therefore happens at the full display resolution, so rotated sprites, lines, and geometry receive more rasterized pixels and look smoother. The logical coordinate space (and thus all draw-call coordinates) remains at `logicWidth × logicHeight` regardless of DPI — ideal for games targeting HD and Retina displays.
 
 ```typescript
 const rapid = new Rapid({

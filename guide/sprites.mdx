@@ -1,7 +1,7 @@
 ---
-title: "Drawing Sprites and Images with Rapid.js"
+title: "Rapid.js Sprite Guide: Draw, Transform, and Animate Sprites"
 sidebarTitle: "Sprites"
-description: "Draw textured sprites with position, rotation, scale, color tinting, UV flipping, and custom shaders. Understand instanced batching for maximum performance."
+description: "Draw textured sprites with position, rotation, scale, color tinting, UV flipping, and custom shaders using Rapid.js instanced batching."
 ---
 
 Sprites are the primary drawing primitive in Rapid.js. Every image you display — a character, a background tile, a UI icon — is drawn as a sprite quad that maps a `Texture` onto two GPU triangles. Under the hood, Rapid batches sprites that share the same texture atlas into a single instanced draw call, so you can render thousands of sprites per frame without thrashing the GPU.

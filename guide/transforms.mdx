@@ -1,5 +1,5 @@
 ---
-title: "Transforms and the Matrix Stack in Rapid.js"
+title: "Applying 2D Transforms and Matrix Stack in Rapid.js"
 sidebarTitle: "Transforms"
 description: "Apply position, rotation, scale, and origin to any draw call. Use the hierarchical MatrixStack for cameras, groups, and parent-child transform chains."
 ---
@@ -226,8 +226,10 @@ rapid.drawSprite({ texture: enemy.tex });
 rapid.matrixStack.restore();
 
 // Later, when enemy.x / enemy.y changes:
-rapid.matrixStack.identity(); // reset local matrix to the slot
-rapid.matrixStack.translate(enemy.x, enemy.y);
+// Modify the saved local matrix directly via rapid.matrix (MatrixStore),
+// then call updateMatrix to recompute the world matrix for that node and its subtree.
+rapid.matrix.identity(handle.local);
+rapid.matrix.translate(handle.local, enemy.x, enemy.y);
 rapid.matrixStack.updateMatrix(handle.step);
 ```
 
